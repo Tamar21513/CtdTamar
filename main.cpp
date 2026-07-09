@@ -10,6 +10,19 @@ using namespace std;
 
 using Board = vector<vector<unique_ptr<Piece>>>;
 
+// מוחק רווחים מיותרים בתחילת ובסוף שורה
+string trim(const string& str) {
+    size_t start = str.find_first_not_of(" \t\r\n");
+
+    if (start == string::npos) {
+        return "";
+    }
+
+    size_t end = str.find_last_not_of(" \t\r\n");
+
+    return str.substr(start, end - start + 1);
+}
+
 // האם הטוקן הוא כלי משחק או נקודה
 bool isAllowedToken(const string& token) {
     if (token == ".")
@@ -25,7 +38,7 @@ bool isAllowedToken(const string& token) {
     bool validPiece = piece == 'K' || piece == 'Q' || piece == 'R' ||
                       piece == 'B' || piece == 'N' || piece == 'P';
 
-    return validPiece && validColor;
+    return validColor && validPiece;
 }
 
 // חלוקת שורה לטוקנים
@@ -34,16 +47,18 @@ vector<string> splitLineToTokens(const string& line) {
     string token;
     stringstream ss(line);
 
-    while (ss >> token)
+    while (ss >> token) {
         tokens.push_back(token);
+    }
 
     return tokens;
 }
 
 // בדיקה האם הלוח תקין
 bool ifBoardProperly(const vector<vector<string>>& textBoard) {
-    if (textBoard.empty())
+    if (textBoard.empty()) {
         return false;
+    }
 
     size_t numCols = textBoard[0].size();
 
@@ -66,8 +81,9 @@ bool ifBoardProperly(const vector<vector<string>>& textBoard) {
 
 // יצירת כלי מתוך טוקן
 unique_ptr<Piece> createPieceFromToken(const string& token) {
-    if (token == ".")
+    if (token == ".") {
         return nullptr;
+    }
 
     string color = token.substr(0, 1);
     string type = token.substr(1, 1);
@@ -94,22 +110,30 @@ Board boardConstruction(const vector<vector<string>>& textBoard) {
 
 // בדיקה אם תא נמצא בתוך הלוח
 bool isInsideBoard(int row, int col, const Board& board) {
-    if (row < 0 || col < 0)
+    if (row < 0 || col < 0) {
         return false;
+    }
 
-    if (row >= (int)board.size())
+    if (row >= (int)board.size()) {
         return false;
+    }
 
-    if (col >= (int)board[0].size())
+    if (board.empty()) {
         return false;
+    }
+
+    if (col >= (int)board[0].size()) {
+        return false;
+    }
 
     return true;
 }
 
-// האם שני תאים הם מאותו צבע
+// האם שני כלים הם מאותו צבע
 bool isFriendlyPiece(const unique_ptr<Piece>& first, const unique_ptr<Piece>& second) {
-    if (first == nullptr || second == nullptr)
+    if (first == nullptr || second == nullptr) {
         return false;
+    }
 
     return first->color == second->color;
 }
@@ -120,13 +144,15 @@ void printBoard(const Board& board) {
 
     for (size_t i = 0; i < board.size(); i++) {
         for (size_t j = 0; j < numCols; j++) {
-            if (j > 0)
+            if (j > 0) {
                 cout << " ";
+            }
 
-            if (board[i][j] == nullptr)
+            if (board[i][j] == nullptr) {
                 cout << ".";
-            else
+            } else {
                 cout << board[i][j]->token();
+            }
         }
 
         cout << endl;
@@ -145,8 +171,10 @@ void handleClick(Board& board,
     int row = y / 100;
     int col = x / 100;
 
-    if (!isInsideBoard(row, col, board))
+    // לחיצה מחוץ ללוח
+    if (!isInsideBoard(row, col, board)) {
         return;
+    }
 
     // אם אין כלי נבחר כרגע
     if (!hasSelection) {
@@ -187,13 +215,15 @@ void handleClick(Board& board,
     selectedCol = -1;
 }
 
-// ראשי
 int main() {
     vector<vector<string>> textBoard;
     string line;
     bool readingBoard = false;
 
+    // קריאת הלוח
     while (getline(cin, line)) {
+        line = trim(line);
+
         if (line == "Board:") {
             readingBoard = true;
             continue;
@@ -206,13 +236,15 @@ int main() {
         if (readingBoard) {
             vector<string> row = splitLineToTokens(line);
 
-            if (!row.empty())
+            if (!row.empty()) {
                 textBoard.push_back(row);
+            }
         }
     }
 
-    if (!ifBoardProperly(textBoard))
+    if (!ifBoardProperly(textBoard)) {
         return 0;
+    }
 
     Board board = boardConstruction(textBoard);
 
@@ -223,6 +255,7 @@ int main() {
 
     string command;
 
+    // קריאת הפקודות
     while (cin >> command) {
         if (command == "click") {
             int x, y;
@@ -234,6 +267,7 @@ int main() {
         else if (command == "wait") {
             long long ms;
             cin >> ms;
+
             currentTimeMs += ms;
         }
 
@@ -241,8 +275,9 @@ int main() {
             string what;
             cin >> what;
 
-            if (what == "board")
+            if (what == "board") {
                 printBoard(board);
+            }
         }
     }
 
