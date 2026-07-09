@@ -4,7 +4,7 @@
 #include <sstream>
 #include <memory>
 
-#include "Piece.cpp"
+#include "classes/Piece.cpp"
 
 using namespace std;
 
