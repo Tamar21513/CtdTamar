@@ -228,8 +228,12 @@ void handleClick(Board& board, int x, int y, bool& hasSelection, int& selectedRo
     //מציאת סוג הכלי
     string type_piece = board[selectedRow][selectedCol]->getType();
     
+    CellOccupied isOccupied = [&board](int checkRow, int checkCol) {
+        return board[checkRow][checkCol] != nullptr;
+    };
+    
     //בדיקה האם נותר לכלי זה לבצע הזזה זו
-    if (!isLegalMoveByType(type_piece, selectedRow, selectedCol, row, col)) {
+    if (!isLegalMoveByType(type_piece, selectedRow, selectedCol, row, col, isOccupied)) {
         clearSelection(hasSelection, selectedRow, selectedCol);
         return;
     }
