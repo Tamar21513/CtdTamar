@@ -12,7 +12,7 @@ bool isSameCell(int fromRow, int fromCol, int toRow, int toCol) {
 }
 
 // חוק תזוזה של מלך
-bool kingRule(int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied) {
+bool kingRule(const string& color, int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied, CellColor getCellColor) {
     if (isSameCell(fromRow, fromCol, toRow, toCol))
         return false;
 
@@ -23,7 +23,7 @@ bool kingRule(int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOcc
 }
 
 // חוק תזוזה של צריח
-bool rookRule(int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied) {
+bool rookRule(const string& color, int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied, CellColor getCellColor) {
     if (isSameCell(fromRow, fromCol, toRow, toCol))
         return false;
 
@@ -34,7 +34,7 @@ bool rookRule(int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOcc
 }
 
 // חוק תזוזה של רץ
-bool bishopRule(int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied) {
+bool bishopRule(const string& color, int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied, CellColor getCellColor) {
     if (isSameCell(fromRow, fromCol, toRow, toCol))
         return false;
 
@@ -45,18 +45,18 @@ bool bishopRule(int fromRow, int fromCol, int toRow, int toCol, CellOccupied isO
 }
 
 // חוק תזוזה של מלכה
-bool queenRule(int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied) {
+bool queenRule(const string& color, int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied, CellColor getCellColor) {
     if (isSameCell(fromRow, fromCol, toRow, toCol))
         return false;
 
-    if (rookRule(fromRow, fromCol, toRow, toCol, isOccupied) || bishopRule(fromRow, fromCol, toRow, toCol, isOccupied))
+    if (rookRule(color ,fromRow, fromCol, toRow, toCol, isOccupied, getCellColor) || bishopRule(color ,fromRow, fromCol, toRow, toCol, isOccupied , getCellColor))
         return true;
 
     return false;
 }
 
 // חוק תזוזה של פרש
-bool knightRule(int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied) {
+bool knightRule(const string& color, int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied, CellColor getCellColor) {
     if (isSameCell(fromRow, fromCol, toRow, toCol))
         return false;
 
@@ -65,6 +65,40 @@ bool knightRule(int fromRow, int fromCol, int toRow, int toCol, CellOccupied isO
 
     if ((absRow == 2 && absCol == 1) || (absRow == 1 && absCol == 2))
         return true;
+
+    return false;
+}
+
+
+//חוק תזוזת החייל
+bool pawnRule(const string& color, int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied, CellColor getCellColor) {
+    if (isSameCell(fromRow, fromCol, toRow, toCol))
+        return false;
+
+    int direction = 0;
+
+    if (color == "w")
+        direction = -1;
+    else if (color == "b")
+        direction = 1;
+    else
+        return false;
+
+    int rowDiff = toRow - fromRow;
+    int colDiff = toCol - fromCol;
+
+    // תנועה קדימה: רק תא אחד, רק אם היעד ריק
+    if (rowDiff == direction && colDiff == 0) {
+        return !isOccupied(toRow, toCol);
+    }
+
+    // אכילה באלכסון: רק תא אחד קדימה באלכסון, רק אם יש שם אויב
+    if (rowDiff == direction && abs(colDiff) == 1) {
+        if (!isOccupied(toRow, toCol))
+            return false;
+
+        return getCellColor(toRow, toCol) != color;
+    }
 
     return false;
 }
@@ -100,7 +134,7 @@ bool isPathClear(int fromRow, int fromCol, int toRow, int toCol, CellOccupied is
 }
 
 // טיפוס של פונקציית חוק תזוזה
-using MoveRule = function<bool(int, int, int, int,CellOccupied)>;
+using MoveRule = function<bool(const string&, int, int, int, int, CellOccupied, CellColor)>;
 
 // יצירת מילון של סוג כלי -> פונקציית חוק
 unordered_map<string, MoveRule> createMoveRules() {
@@ -111,16 +145,17 @@ unordered_map<string, MoveRule> createMoveRules() {
     rules["B"] = bishopRule;
     rules["Q"] = queenRule;
     rules["N"] = knightRule;
+    rules["P"] = pawnRule;
 
     return rules;
 }
 
 // בדיקה האם לכלי מסוג מסוים מותר לבצע את התזוזה
-bool isLegalMoveByType(const string& type_piece, int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied) {
+bool isLegalMoveByType(const string& type_piece,const string& color, int fromRow, int fromCol, int toRow, int toCol, CellOccupied isOccupied, CellColor getCellColor) {
     static unordered_map<string, MoveRule> rules = createMoveRules();
 
     if (rules.find(type_piece) == rules.end())
         return false;
 
-    return rules[type_piece](fromRow, fromCol, toRow, toCol, isOccupied);
+    return rules[type_piece](color, fromRow, fromCol, toRow, toCol, isOccupied, getCellColor);
 }

@@ -227,13 +227,22 @@ void handleClick(Board& board, int x, int y, bool& hasSelection, int& selectedRo
     }
     //מציאת סוג הכלי
     string type_piece = board[selectedRow][selectedCol]->getType();
+    //מציאת צבע הכלי
+    string color_piece = board[selectedRow][selectedCol]->getColor();
     
     CellOccupied isOccupied = [&board](int checkRow, int checkCol) {
         return board[checkRow][checkCol] != nullptr;
     };
-    
+
+    CellColor getCellColor = [&board](int checkRow, int checkCol) {
+        if (board[checkRow][checkCol] == nullptr)
+            return string("");
+        
+        return board[checkRow][checkCol]->getColor();
+    };
+
     //בדיקה האם נותר לכלי זה לבצע הזזה זו
-    if (!isLegalMoveByType(type_piece, selectedRow, selectedCol, row, col, isOccupied)) {
+    if (!isLegalMoveByType(type_piece, color_piece, selectedRow, selectedCol, row, col, isOccupied, getCellColor)) {
         clearSelection(hasSelection, selectedRow, selectedCol);
         return;
     }
