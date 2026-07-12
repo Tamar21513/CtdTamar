@@ -2,7 +2,7 @@
 #include <unordered_map>
 #include <functional>
 #include <cmath>
-#include "Rules.h"
+#include "Rules.hpp"
 
 using namespace std;
 
