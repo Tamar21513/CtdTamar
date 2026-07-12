@@ -1,5 +1,5 @@
-#include "BoardUtils.hpp"
-#include "Config.hpp"
+#include "../include/BoardUtils.hpp"
+#include "../include/Config.hpp"
 
 #include <sstream>
 using namespace std;

@@ -1,6 +1,6 @@
-#include "Game.hpp"
-#include "Config.hpp"
-#include "Rules.hpp"
+#include "../include/Game.hpp"
+#include "../include/Config.hpp"
+#include "../include/Rules.hpp"
 
 using namespace std;
 
@@ -28,8 +28,11 @@ void startMove(vector<ActiveMove>& activeMoves, int fromRow, int fromCol, int to
     activeMove.toRow = toRow;
     activeMove.toCol = toCol;
     activeMove.startTimeMs = currentTimeMs;
-    activeMove.finishTimeMs = currentTimeMs+ Config::MOVE_TIME_PER_CELL_MS;
-
+    int rowDistance = abs(toRow - fromRow);
+    int colDistance = abs(toCol - fromCol);
+    int distance = max(rowDistance, colDistance);
+    activeMove.finishTimeMs = currentTimeMs + distance * Config::MOVE_TIME_PER_CELL_MS;
+    
     activeMoves.push_back(activeMove);
 }
 

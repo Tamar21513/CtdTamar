@@ -1,4 +1,4 @@
-#include "Piece.hpp"
+#include "../include/Piece.hpp"
 
 Piece::Piece(string color, string type, long long cooldownMs) {
     this->color = color;
