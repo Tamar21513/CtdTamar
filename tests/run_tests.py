@@ -1,22 +1,17 @@
 import subprocess
 import os
 import sys
-from pathlib import Path
 
-PROJECT_DIR = Path(__file__).resolve().parent.parent
-EXECUTABLE = PROJECT_DIR / "main.exe"
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-COMPILE_COMMAND = [
-    "cl",
-    "/EHsc",
-    "/std:c++17",
-    "/Iinclude",
+EXE_PATH = os.path.join(ROOT_DIR, "main.exe")
+
+CPP_FILES = [
     "main.cpp",
-    str(Path("src") / "Piece.cpp"),
-    str(Path("src") / "Rules.cpp"),
-    str(Path("src") / "BoardUtils.cpp"),
-    str(Path("src") / "Game.cpp"),
-    "/Fe:" + str(EXECUTABLE)
+    os.path.join("src", "Piece.cpp"),
+    os.path.join("src", "Rules.cpp"),
+    os.path.join("src", "BoardUtils.cpp"),
+    os.path.join("src", "Game.cpp"),
 ]
 
 tests = [
@@ -24,21 +19,18 @@ tests = [
         "name": "parse_rectangular_board",
         "input": """Board:
 wK . .
-. . .
-. . bK
+. bQ .
 Commands:
 print board
 """,
         "expected": """wK . .
-. . .
-. . bK
+. bQ .
 """
     },
     {
         "name": "reject_unknown_token",
         "input": """Board:
-wK xZ
-. .
+wK xZ .
 Commands:
 print board
 """,
@@ -49,7 +41,7 @@ print board
         "name": "reject_row_width_mismatch",
         "input": """Board:
 wK . .
-. bK
+. bQ
 Commands:
 print board
 """,
@@ -64,8 +56,7 @@ wK . .
 . . .
 Commands:
 click 150 150
-click 250 250
-wait 1000
+click 50 50
 print board
 """,
         "expected": """wK . .
@@ -80,8 +71,7 @@ wK . .
 . . .
 . . .
 Commands:
-click 350 50
-click -10 50
+click 500 500
 print board
 """,
         "expected": """wK . .
@@ -114,8 +104,8 @@ wK . .
 . . .
 Commands:
 click 50 50
-click 50 250
-wait 1000
+click 250 250
+wait 3000
 print board
 """,
         "expected": """wK . .
@@ -143,19 +133,23 @@ print board
     {
         "name": "friendly_piece_replaces_selection",
         "input": """Board:
-wR . wK
+wK wR .
+. . .
 . . .
 Commands:
 click 50 50
+click 150 50
 click 250 50
-click 250 150
 wait 1000
 print board
 """,
-        "expected": """wR . .
-. . wK
+        "expected": """wK . wR
+. . .
+. . .
 """
     },
+
+    # Rook
     {
         "name": "rook_horizontal_legal",
         "input": """Board:
@@ -165,7 +159,7 @@ wR . .
 Commands:
 click 50 50
 click 250 50
-wait 1000
+wait 2000
 print board
 """,
         "expected": """. . wR
@@ -182,7 +176,7 @@ wR . .
 Commands:
 click 50 50
 click 50 250
-wait 1000
+wait 2000
 print board
 """,
         "expected": """. . .
@@ -199,7 +193,7 @@ wR . .
 Commands:
 click 50 50
 click 150 150
-wait 1000
+wait 2000
 print board
 """,
         "expected": """wR . .
@@ -216,7 +210,7 @@ wR wN .
 Commands:
 click 50 50
 click 250 50
-wait 1000
+wait 3000
 print board
 """,
         "expected": """wR wN .
@@ -233,7 +227,7 @@ wR . bN
 Commands:
 click 50 50
 click 250 50
-wait 1000
+wait 2000
 print board
 """,
         "expected": """. . wR
@@ -241,6 +235,8 @@ print board
 . . .
 """
     },
+
+    # Bishop
     {
         "name": "bishop_diagonal_legal",
         "input": """Board:
@@ -250,7 +246,7 @@ wB . .
 Commands:
 click 50 50
 click 250 250
-wait 1000
+wait 2000
 print board
 """,
         "expected": """. . .
@@ -266,8 +262,8 @@ wB . .
 . . .
 Commands:
 click 50 50
-click 50 250
-wait 1000
+click 250 50
+wait 3000
 print board
 """,
         "expected": """wB . .
@@ -279,16 +275,16 @@ print board
         "name": "bishop_blocked_by_piece",
         "input": """Board:
 wB . .
-. wN .
+. wP .
 . . .
 Commands:
 click 50 50
 click 250 250
-wait 1000
+wait 3000
 print board
 """,
         "expected": """wB . .
-. wN .
+. wP .
 . . .
 """
     },
@@ -301,7 +297,7 @@ wB . .
 Commands:
 click 50 50
 click 250 250
-wait 1000
+wait 2000
 print board
 """,
         "expected": """. . .
@@ -309,6 +305,8 @@ print board
 . . wB
 """
     },
+
+    # Queen
     {
         "name": "queen_horizontal_legal",
         "input": """Board:
@@ -318,7 +316,7 @@ wQ . .
 Commands:
 click 50 50
 click 250 50
-wait 1000
+wait 2000
 print board
 """,
         "expected": """. . wQ
@@ -335,7 +333,7 @@ wQ . .
 Commands:
 click 50 50
 click 250 250
-wait 1000
+wait 2000
 print board
 """,
         "expected": """. . .
@@ -352,7 +350,7 @@ wQ . .
 Commands:
 click 50 50
 click 150 250
-wait 1000
+wait 3000
 print board
 """,
         "expected": """wQ . .
@@ -363,16 +361,16 @@ print board
     {
         "name": "queen_blocked_straight",
         "input": """Board:
-wQ wN .
+wQ wP .
 . . .
 . . .
 Commands:
 click 50 50
 click 250 50
-wait 1000
+wait 3000
 print board
 """,
-        "expected": """wQ wN .
+        "expected": """wQ wP .
 . . .
 . . .
 """
@@ -381,19 +379,21 @@ print board
         "name": "queen_blocked_diagonal",
         "input": """Board:
 wQ . .
-. wN .
+. wP .
 . . .
 Commands:
 click 50 50
 click 250 250
-wait 1000
+wait 3000
 print board
 """,
         "expected": """wQ . .
-. wN .
+. wP .
 . . .
 """
     },
+
+    # Knight
     {
         "name": "knight_legal_jump",
         "input": """Board:
@@ -403,7 +403,7 @@ wN wP .
 Commands:
 click 50 50
 click 150 250
-wait 1000
+wait 2000
 print board
 """,
         "expected": """. wP .
@@ -420,7 +420,7 @@ wN . .
 Commands:
 click 50 50
 click 150 150
-wait 1000
+wait 2000
 print board
 """,
         "expected": """wN . .
@@ -437,7 +437,7 @@ wN . .
 Commands:
 click 50 50
 click 150 250
-wait 1000
+wait 2000
 print board
 """,
         "expected": """. . .
@@ -445,6 +445,8 @@ print board
 . wN .
 """
     },
+
+    # Pawns
     {
         "name": "white_pawn_single_step",
         "input": """Board:
@@ -516,19 +518,17 @@ print board
     {
         "name": "pawn_cannot_move_two_cells",
         "input": """Board:
-. . .
-. . .
 . wP .
+. . .
 . . .
 Commands:
-click 150 250
 click 150 50
-wait 1000
+click 150 250
+wait 2000
 print board
 """,
-        "expected": """. . .
+        "expected": """. wP .
 . . .
-. wP .
 . . .
 """
     },
@@ -651,6 +651,8 @@ print board
 . . .
 """
     },
+
+    # General and parsing edge cases
     {
         "name": "same_cell_move_ignored",
         "input": """Board:
@@ -682,6 +684,8 @@ print board
 . . .
 """
     },
+
+    # Movement over time
     {
         "name": "movement_not_arrived_yet_piece_stays_in_origin",
         "input": """Board:
@@ -755,8 +759,13 @@ wait 400
 print board
 wait 600
 print board
+wait 1000
+print board
 """,
         "expected": """wR . .
+. . .
+. . .
+wR . .
 . . .
 . . .
 . . wR
@@ -773,7 +782,7 @@ wB . .
 Commands:
 click 50 50
 click 250 250
-wait 1500
+wait 2500
 print board
 """,
         "expected": """. . .
@@ -859,8 +868,10 @@ print board
 . . .
 """
     },
+
+    # Updated for current rule: only one active move is allowed at a time.
     {
-        "name": "multiple_moves_arrive_independently",
+        "name": "multiple_moves_are_not_allowed_concurrently",
         "input": """Board:
 wK . bK
 . . .
@@ -878,34 +889,440 @@ print board
         "expected": """wK . bK
 . . .
 . . .
+. . bK
+. wK .
 . . .
-. wK bK
+"""
+    },
+
+    # No redirect and no cooldown after arrival
+    {
+        "name": "moving_piece_cannot_be_redirected_mid_route",
+        "input": """Board:
+wR . .
+Commands:
+click 50 50
+click 250 50
+wait 500
+click 50 50
+click 150 50
+wait 500
+print board
+wait 1000
+print board
+""",
+        "expected": """wR . .
+. . wR
+"""
+    },
+    {
+        "name": "moving_piece_still_goes_to_original_destination",
+        "input": """Board:
+wR . .
+Commands:
+click 50 50
+click 250 50
+wait 999
+click 50 50
+click 150 50
+wait 1001
+print board
+""",
+        "expected": """. . wR
+"""
+    },
+    {
+        "name": "piece_can_move_again_immediately_after_arrival",
+        "input": """Board:
+wR . .
+Commands:
+click 50 50
+click 150 50
+wait 1000
+click 150 50
+click 250 50
+wait 1000
+print board
+""",
+        "expected": """. . wR
+"""
+    },
+    {
+        "name": "piece_can_move_again_without_cooldown_after_arrival",
+        "input": """Board:
+wK . .
 . . .
+. . .
+Commands:
+click 50 50
+click 150 150
+wait 1000
+click 150 150
+click 250 250
+wait 1000
+print board
+""",
+        "expected": """. . .
+. . .
+. . wK
+"""
+    },
+    {
+        "name": "clicking_moving_piece_does_not_select_it",
+        "input": """Board:
+wR . .
+. wN .
+Commands:
+click 50 50
+click 250 50
+wait 500
+click 50 50
+click 150 150
+wait 1500
+print board
+""",
+        "expected": """. . wR
+. wN .
+"""
+    },
+    {
+        "name": "moving_piece_cannot_start_second_move_before_arrival_even_if_wait_almost_done",
+        "input": """Board:
+wR . .
+Commands:
+click 50 50
+click 250 50
+wait 1999
+click 50 50
+click 150 50
+print board
+wait 1
+print board
+""",
+        "expected": """wR . .
+. . wR
+"""
+    },
+    {
+        "name": "after_arrival_same_piece_can_reverse_direction_immediately",
+        "input": """Board:
+wR . .
+Commands:
+click 50 50
+click 250 50
+wait 2000
+click 250 50
+click 50 50
+wait 2000
+print board
+""",
+        "expected": """wR . .
+"""
+    },
+
+    # Current common-route/global active movement restriction
+    {
+        "name": "two_different_pieces_cannot_move_while_one_is_already_moving",
+        "input": """Board:
+wR . .
+bR . .
+Commands:
+click 50 50
+click 250 50
+wait 500
+click 50 150
+click 250 150
+wait 2000
+print board
+""",
+        "expected": """. . wR
+bR . .
+"""
+    },
+    {
+        "name": "moving_piece_redirect_attempt_and_other_piece_are_blocked",
+        "input": """Board:
+wR . .
+bR . .
+. . .
+Commands:
+click 50 50
+click 250 50
+wait 500
+click 50 50
+click 50 150
+click 50 150
+click 250 150
+wait 2000
+print board
+""",
+        "expected": """. . wR
+bR . .
+. . .
+"""
+    },
+    {
+        "name": "piece_can_move_twice_immediately_after_each_arrival",
+        "input": """Board:
+wK . .
+. . .
+. . .
+Commands:
+click 50 50
+click 150 50
+wait 1000
+click 150 50
+click 250 50
+wait 1000
+click 250 50
+click 250 150
+wait 1000
+print board
+""",
+        "expected": """. . .
+. . wK
+. . .
+"""
+    },
+    {
+        "name": "cannot_start_second_piece_while_first_piece_is_moving_same_color",
+        "input": """Board:
+wR . .
+wN . .
+. . .
+Commands:
+click 50 50
+click 250 50
+wait 500
+click 50 150
+click 150 250
+wait 1500
+print board
+""",
+        "expected": """. . wR
+wN . .
+. . .
+"""
+    },
+    {
+        "name": "cannot_start_second_piece_while_first_piece_is_moving_opposite_color",
+        "input": """Board:
+wR . .
+. . .
+bR . .
+Commands:
+click 50 50
+click 250 50
+click 50 250
+click 250 250
+wait 2000
+print board
+""",
+        "expected": """. . wR
+. . .
+bR . .
+"""
+    },
+    {
+        "name": "cannot_start_second_piece_even_on_different_row_route",
+        "input": """Board:
+wR . .
+. . .
+wR . .
+Commands:
+click 50 50
+click 250 50
+click 50 250
+click 250 250
+wait 2000
+print board
+""",
+        "expected": """. . wR
+. . .
+wR . .
+"""
+    },
+    {
+        "name": "cannot_start_second_piece_even_if_first_almost_arrived",
+        "input": """Board:
+wR . .
+. . .
+bR . .
+Commands:
+click 50 50
+click 250 50
+wait 1999
+click 50 250
+click 250 250
+wait 1
+print board
+""",
+        "expected": """. . wR
+. . .
+bR . .
+"""
+    },
+    {
+        "name": "second_piece_can_move_after_first_piece_arrived",
+        "input": """Board:
+wR . .
+. . .
+bR . .
+Commands:
+click 50 50
+click 250 50
+wait 2000
+click 50 250
+click 250 250
+wait 2000
+print board
+""",
+        "expected": """. . wR
+. . .
+. . bR
+"""
+    },
+    {
+        "name": "second_piece_can_move_after_first_arrived_immediately_no_extra_wait",
+        "input": """Board:
+wK . .
+bK . .
+. . .
+Commands:
+click 50 50
+click 150 50
+wait 1000
+click 50 150
+click 150 150
+wait 1000
+print board
+""",
+        "expected": """. wK .
+. bK .
+. . .
+"""
+    },
+    {
+        "name": "blocked_second_move_does_not_affect_first_active_move",
+        "input": """Board:
+wR . .
+. . .
+bR . .
+Commands:
+click 50 50
+click 250 50
+wait 500
+click 50 250
+click 250 250
+wait 500
+print board
+wait 1000
+print board
+""",
+        "expected": """wR . .
+. . .
+bR . .
+. . wR
+. . .
+bR . .
+"""
+    },
+    {
+        "name": "cannot_start_knight_while_rook_is_moving",
+        "input": """Board:
+wR . .
+bN . .
+. . .
+Commands:
+click 50 50
+click 250 50
+wait 500
+click 50 150
+click 250 250
+wait 1500
+print board
+""",
+        "expected": """. . wR
+bN . .
+. . .
+"""
+    },
+    {
+        "name": "cannot_start_pawn_while_other_piece_is_moving",
+        "input": """Board:
+wR . .
+. bP .
+. . .
+Commands:
+click 50 50
+click 250 50
+wait 500
+click 150 150
+click 150 250
+wait 1500
+print board
+""",
+        "expected": """. . wR
+. bP .
+. . .
+"""
+    },
+    {
+        "name": "same_piece_cannot_be_redirected_and_other_piece_also_cannot_start",
+        "input": """Board:
+wR . .
+. . .
+bR . .
+Commands:
+click 50 50
+click 250 50
+wait 500
+click 50 50
+click 150 50
+click 50 250
+click 250 250
+wait 1500
+print board
+""",
+        "expected": """. . wR
+. . .
+bR . .
 """
     },
 ]
 
-def compile_project():
-    if EXECUTABLE.exists():
-        try:
-            EXECUTABLE.unlink()
-        except PermissionError:
-            print("ERROR: main.exe is open/running. Close it and run tests again.")
-            sys.exit(1)
+
+def compile_program():
+    if os.name == "nt":
+        command = [
+            "cl",
+            "/EHsc",
+            "/std:c++17",
+            "/Iinclude",
+            *CPP_FILES,
+            f"/Fe:{EXE_PATH}",
+        ]
+    else:
+        command = [
+            "g++",
+            "-std=c++17",
+            "-Iinclude",
+            *CPP_FILES,
+            "-o",
+            EXE_PATH,
+        ]
 
     result = subprocess.run(
-        COMPILE_COMMAND,
-        cwd=PROJECT_DIR,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        shell=False
+        command,
+        cwd=ROOT_DIR,
+        capture_output=True,
+        text=True
     )
 
     if result.returncode != 0:
         print("Compilation failed.")
         print("Command:")
-        print(" ".join(COMPILE_COMMAND))
+        print(" ".join(command))
         print("stdout:")
         print(result.stdout)
         print("stderr:")
@@ -913,18 +1330,30 @@ def compile_project():
         sys.exit(1)
 
 
-def normalize_output(text):
-    return text.replace("\r\n", "\n")
+def normalize_output(output):
+    output = output.replace("\r\n", "\n")
+    lines = output.split("\n")
+    useful_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "":
+            continue
+        useful_lines.append(stripped)
+
+    if not useful_lines:
+        return ""
+
+    return "\n".join(useful_lines) + "\n"
 
 
-def run_single_test(test):
+def run_one_test(test):
     result = subprocess.run(
-        [str(EXECUTABLE)],
+        [EXE_PATH],
         input=test["input"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
-        shell=False
+        cwd=ROOT_DIR
     )
 
     actual = normalize_output(result.stdout)
@@ -941,28 +1370,25 @@ def run_single_test(test):
     print(repr(expected))
     print("Actual:")
     print(repr(actual))
-    if result.stderr:
-        print("stderr:")
-        print(result.stderr)
     print("-" * 60)
     return False
 
 
 def main():
-    compile_project()
+    compile_program()
 
     passed = 0
+    failed = 0
 
     for test in tests:
-        if run_single_test(test):
+        if run_one_test(test):
             passed += 1
-
-    total = len(tests)
-    failed = total - passed
+        else:
+            failed += 1
 
     print()
-    print(f"Passed: {passed}/{total}")
-    print(f"Failed: {failed}/{total}")
+    print(f"Passed: {passed}/{len(tests)}")
+    print(f"Failed: {failed}")
 
     if failed != 0:
         sys.exit(1)

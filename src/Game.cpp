@@ -4,6 +4,79 @@
 
 using namespace std;
 
+//בדיקה אם כלי כבר זז
+bool isPieceMoving(const vector<ActiveMove>& activeMoves, int row, int col){
+    for(size_t i = 0; i< activeMoves.size(); i++){
+        if(activeMoves[i].fromRow == row && activeMoves[i].fromCol == col)
+            return true;
+    }
+    return false;
+}
+
+
+//פונקציה שעוברת על כל המסלול ובודקת אם עוברת בתא מסוים
+bool isCellOnRoute(int routeFromRow, int routeFromCol, int routeToRow, int routeToCol, int checkRow, int checkCol){
+    int rowStep = 0;
+    int colStep = 0;
+
+    if(routeToRow > routeFromRow)
+        rowStep = 1;
+    else if(routeToRow < routeFromRow)
+        rowStep = -1;
+
+    if(routeToCol > routeFromCol)
+        colStep = 1;
+    else if(routeToCol < routeFromCol)
+        colStep = -1;
+
+    int currentRow = routeFromRow;
+    int currentCol = routeFromCol;
+
+    while(true){
+        if(currentRow == checkRow && currentCol == checkCol)
+            return true;
+        if(currentRow == routeToRow && currentCol == routeToCol)
+            break;
+        
+        currentRow += rowStep;
+        currentCol += colStep;
+    }
+    return false;
+}
+
+
+//פונקציה שבודקת אם שני מסלולים נפגשים
+bool hasCommonRouteConflict(const vector<ActiveMove>& activeMoves, int fromRow, int fromCol, int toRow, int toCol){
+    int rowStep = 0;
+    int colStep = 0;
+
+    if(toRow > fromRow)
+        rowStep = 1;
+    else if(toRow < fromRow)
+        rowStep = -1;
+    if(toCol > fromCol)
+        colStep = 1;
+    else if(toCol < fromCol)
+        colStep = -1;
+
+    int currentRow = fromRow;
+    int currentCol = fromCol;
+
+    while(true){
+        for (size_t i = 0; i < activeMoves.size(); i++) {
+            if (isCellOnRoute(activeMoves[i].fromRow, activeMoves[i].fromCol, activeMoves[i].toRow, activeMoves[i].toCol, currentRow, currentCol)) {
+                return true;
+            }
+        }
+        if(currentRow == toRow && currentCol == toCol)
+            break;
+        
+        currentRow += rowStep;
+        currentCol += colStep;
+    }
+    return false;
+}
+
 // ביצוע מעבר של כלי
 void moveSelectedPiece(Board& board, int fromRow, int fromCol, int toRow, int toCol, long long currentTimeMs) {
     board[toRow][toCol] = move(board[fromRow][fromCol]);
@@ -70,6 +143,11 @@ void handleClick(Board& board,vector<ActiveMove>& activeMoves, int x, int y, boo
         return;
     }
 
+    //בדיקה שהכלי לא בתזוזה
+    if (isPieceMoving(activeMoves, row, col)) {
+        return;
+    }
+
     // אם אין כלי נבחר כרגע
     if (!hasSelection) {
         if (board[row][col] != nullptr) {
@@ -112,6 +190,19 @@ void handleClick(Board& board,vector<ActiveMove>& activeMoves, int x, int y, boo
 
     // בדיקה האם מותר לכלי זה לבצע הזזה זו
     if (!isLegalMoveByType(type_piece, color_piece, selectedRow, selectedCol, row, col, isOccupied, getCellColor)) {
+        clearSelection(hasSelection, selectedRow, selectedCol);
+        return;
+    }
+
+    //לא נפגש עם מסלול אחר
+    //if (hasCommonRouteConflict(activeMoves, selectedRow, selectedCol, row, col)) {
+    //    clearSelection(hasSelection, selectedRow, selectedCol);
+    //    return;
+    //}
+
+    //בודק אם יש כלי בתנועה
+    // אם יש כבר כלי בתנועה — אסור להתחיל תנועה נוספת
+    if (!activeMoves.empty()) {
         clearSelection(hasSelection, selectedRow, selectedCol);
         return;
     }
