@@ -108,24 +108,41 @@ bool PieceRules::canMoveLikePawn(const Board& board, const Position& source, con
     }
 
     int direction = 0;
+    int startRow = 0;
 
     if (color == PieceColor::White) {
         direction = -1;
+        startRow = board.getHeight() - 1;
     } else {
         direction = 1;
+        startRow = 0;
     }
 
     int rowDiff = destination.getRow() - source.getRow();
     int colDiff = destination.getCol() - source.getCol();
 
-    // צעד קדימה
+    // צעד אחד קדימה
     if (rowDiff == direction && colDiff == 0) {
         return board.isEmpty(destination);
     }
 
-    // אכילה באלכסון
+    // שני צעדים קדימה מהשורה ההתחלתית בלבד
+    if (source.getRow() == startRow && rowDiff == 2 * direction && colDiff == 0) {
+        
+        Position middleCell(source.getRow() + direction, source.getCol());
+
+        return board.isEmpty(middleCell) && board.isEmpty(destination);
+    }
+
+    // אכילה באלכסון — רק כלי בצבע נגדי
     if (rowDiff == direction && abs(colDiff) == 1) {
-        return !board.isEmpty(destination);
+        shared_ptr<Piece> targetPiece = board.getPieceAt(destination);
+
+        if (targetPiece == nullptr) {
+            return false;
+        }
+
+        return targetPiece->getColor() != color;
     }
 
     return false;

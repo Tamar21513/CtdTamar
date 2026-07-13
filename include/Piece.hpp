@@ -40,6 +40,7 @@ public:
     PieceState getState() const;
 
     void setState(PieceState newState);
+    void setKind(PieceKind newKind);
 
     string token() const;
 

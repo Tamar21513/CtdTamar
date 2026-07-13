@@ -27,6 +27,10 @@ void Piece::setState(PieceState newState) {
     state = newState;
 }
 
+void Piece::setKind(PieceKind newKind) {
+    kind = newKind;
+}
+
 string Piece::token() const {
     string result = "";
     result += colorToChar(color);

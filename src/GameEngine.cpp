@@ -58,6 +58,16 @@ void GameEngine::applyArrival(const ArrivalEvent& event) {
 
     movingPiece->setState(PieceState::Idle);
 
+    // הכתרה: רגלי שהגיע לשורה האחרונה הופך למלכה
+    if (movingPiece->getKind() == PieceKind::Pawn) {
+        bool whiteReachedLastRow = movingPiece->getColor() == PieceColor::White && event.destination.getRow() == 0;
+        bool blackReachedLastRow = movingPiece->getColor() == PieceColor::Black && event.destination.getRow() == board.getHeight() - 1;
+
+        if (whiteReachedLastRow || blackReachedLastRow) {
+            movingPiece->setKind(PieceKind::Queen);
+        }
+    }
+
     if (capturedKing) {
         gameOver = true;
     }

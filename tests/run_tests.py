@@ -458,15 +458,17 @@ print board
         "name": "white_pawn_single_step",
         "input": """Board:
 . . .
+. . .
 . wP .
 . . .
 Commands:
+click 150 250
 click 150 150
-click 150 50
 wait 1000
 print board
 """,
-        "expected": """. wP .
+        "expected": """. . .
+. wP .
 . . .
 . . .
 """
@@ -477,6 +479,7 @@ print board
 . . .
 . bP .
 . . .
+. . .
 Commands:
 click 150 150
 click 150 250
@@ -486,6 +489,7 @@ print board
         "expected": """. . .
 . . .
 . bP .
+. . .
 """
     },
     {
@@ -522,23 +526,25 @@ print board
 . . .
 """
     },
-    {
-        "name": "pawn_cannot_move_two_cells",
-        "input": """Board:
+{
+    "name": "pawn_cannot_move_two_cells_when_blocked",
+    "input": """Board:
+. . .
+. bN .
 . wP .
 . . .
-. . .
 Commands:
-click 150 50
 click 150 250
+click 150 50
 wait 2000
 print board
 """,
-        "expected": """. wP .
-. . .
+    "expected": """. . .
+. bN .
+. wP .
 . . .
 """
-    },
+},
     {
         "name": "pawn_cannot_capture_forward",
         "input": """Board:
@@ -559,16 +565,18 @@ print board
     {
         "name": "white_pawn_diagonal_capture_left",
         "input": """Board:
+. . .
 bR . .
 . wP .
 . . .
 Commands:
-click 150 150
-click 50 50
+click 150 250
+click 50 150
 wait 1000
 print board
 """,
-        "expected": """wP . .
+        "expected": """. . .
+wP . .
 . . .
 . . .
 """
@@ -576,16 +584,18 @@ print board
     {
         "name": "white_pawn_diagonal_capture_right",
         "input": """Board:
+. . .
 . . bR
 . wP .
 . . .
 Commands:
-click 150 150
-click 250 50
+click 150 250
+click 250 150
 wait 1000
 print board
 """,
-        "expected": """. . wP
+        "expected": """. . .
+. . wP
 . . .
 . . .
 """
@@ -596,6 +606,7 @@ print board
 . . .
 . bP .
 wR . .
+. . .
 Commands:
 click 150 150
 click 50 250
@@ -605,6 +616,7 @@ print board
         "expected": """. . .
 . . .
 bP . .
+. . .
 """
     },
     {
@@ -613,6 +625,7 @@ bP . .
 . . .
 . bP .
 . . wR
+. . .
 Commands:
 click 150 150
 click 250 250
@@ -622,6 +635,7 @@ print board
         "expected": """. . .
 . . .
 . . bP
+. . .
 """
     },
     {
@@ -835,18 +849,21 @@ print board
         "name": "pawn_move_is_delayed",
         "input": """Board:
 . . .
+. . .
 . wP .
 . . .
 Commands:
+click 150 250
 click 150 150
-click 150 50
 wait 999
 print board
 wait 1
 print board
 """,
         "expected": """. . .
+. . .
 . wP .
+. . .
 . . .
 . wP .
 . . .
@@ -1553,6 +1570,150 @@ print board
 . . .
 . . wR
 . . bR
+. . .
+"""
+},
+{
+    "name": "white_pawn_can_move_two_cells_from_start_row",
+    "input": """Board:
+. . .
+. . .
+. wP .
+Commands:
+click 150 250
+click 150 50
+wait 2000
+print board
+""",
+    "expected": """. wQ .
+. . .
+. . .
+"""
+},
+{
+    "name": "black_pawn_can_move_two_cells_from_start_row",
+    "input": """Board:
+. . .
+. bP .
+. . .
+. . .
+Commands:
+click 150 150
+click 150 350
+wait 2000
+print board
+""",
+    "expected": """. . .
+. bP .
+. . .
+. . .
+"""
+},
+{
+    "name": "pawn_cannot_move_two_cells_not_from_start_row",
+    "input": """Board:
+. . .
+. wP .
+. . .
+. . .
+Commands:
+click 150 150
+click 150 350
+wait 2000
+print board
+""",
+    "expected": """. . .
+. wP .
+. . .
+. . .
+"""
+},
+{
+    "name": "pawn_two_cell_move_requires_clear_middle_cell",
+    "input": """Board:
+. . .
+. bN .
+. wP .
+. . .
+Commands:
+click 150 250
+click 150 50
+wait 2000
+print board
+""",
+    "expected": """. . .
+. bN .
+. wP .
+. . .
+"""
+},
+{
+    "name": "pawn_two_cell_move_requires_empty_destination",
+    "input": """Board:
+. bN .
+. . .
+. wP .
+. . .
+Commands:
+click 150 250
+click 150 50
+wait 2000
+print board
+""",
+    "expected": """. bN .
+. . .
+. wP .
+. . .
+"""
+},
+{
+    "name": "white_pawn_promotes_to_queen_on_last_row",
+    "input": """Board:
+. . .
+. wP .
+. . .
+Commands:
+click 150 150
+click 150 50
+wait 1000
+print board
+""",
+    "expected": """. wQ .
+. . .
+. . .
+"""
+},
+{
+    "name": "black_pawn_promotes_to_queen_on_last_row",
+    "input": """Board:
+. . .
+. bP .
+. . .
+Commands:
+click 150 150
+click 150 250
+wait 1000
+print board
+""",
+    "expected": """. . .
+. . .
+. bQ .
+"""
+},
+{
+    "name": "pawn_promotes_after_diagonal_capture_on_last_row",
+    "input": """Board:
+. bR .
+. . wP
+. . .
+Commands:
+click 250 150
+click 150 50
+wait 1000
+print board
+""",
+    "expected": """. wQ .
+. . .
 . . .
 """
 },
