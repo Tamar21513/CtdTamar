@@ -59,6 +59,13 @@ int main() {
 
             controller.click(x, y);
         }
+        else if (command == "jump") {
+            int x;
+            int y;
+            cin >> x >> y;
+                
+            controller.jump(x, y);
+        }
         else if (command == "print") {
             string what;
             cin >> what;

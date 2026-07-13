@@ -17,16 +17,34 @@ struct Motion {
     long long finishTimeMs;
 };
 
+struct Jump {
+    shared_ptr<Piece> piece;
+    Position cell;
+    long long startTimeMs;
+    long long finishTimeMs;
+};
+
 struct ArrivalEvent {
     shared_ptr<Piece> piece;
     Position source;
     Position destination;
 };
 
+struct JumpLandingEvent {
+    shared_ptr<Piece> piece;
+    Position cell;
+};
+
+struct TimeEvents {
+    vector<ArrivalEvent> arrivals;
+    vector<JumpLandingEvent> jumpLandings;
+};
+
 class RealTimeArbiter {
 private:
     long long currentTimeMs;
     vector<Motion> activeMotions;
+    vector<Jump> activeJumps;
 
     long long calculateDurationMs(const Position& source, const Position& destination) const;
 
@@ -34,7 +52,8 @@ public:
     RealTimeArbiter();
     bool hasActiveMotion() const;
     void startMotion(shared_ptr<Piece> piece, const Position& source, const Position& destination);
-    vector<ArrivalEvent> advanceTime(long long ms);
+    void startJump(shared_ptr<Piece> piece, const Position& cell);
+    TimeEvents advanceTime(long long ms);
 };
 
 #endif

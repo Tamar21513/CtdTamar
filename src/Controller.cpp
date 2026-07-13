@@ -42,6 +42,21 @@ ControllerResult Controller::click(int x, int y) {
     return {result.isAccepted, result.reason};
 }
 
+ControllerResult Controller::jump(int x, int y) {
+    optional<Position> clickedCell = BoardMapper::pixelToCell(x, y, engine.getBoard());
+
+    // jump לא משתמש בבחירה קיימת
+    selectedCell = nullopt;
+
+    if (!clickedCell.has_value()) {
+        return {false, Reasons::CLICK_OUTSIDE};
+    }
+
+    MoveResult result = engine.requestJump(clickedCell.value());
+
+    return {result.isAccepted, result.reason};
+}
+
 bool Controller::hasSelection() const {
     return selectedCell.has_value();
 }

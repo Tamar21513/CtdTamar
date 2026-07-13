@@ -15,10 +15,12 @@ private:
     bool gameOver;
 
     void applyArrival(const ArrivalEvent& event);
+    void applyJumpLanding(const JumpLandingEvent& event);
 
 public:
     GameEngine(Board board);
     MoveResult requestMove(const Position& source, const Position& destination);
+    MoveResult requestJump(const Position& cell);
     void wait(long long ms);
     const Board& getBoard() const;
     bool isGameOver() const;

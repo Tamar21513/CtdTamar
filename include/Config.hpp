@@ -7,6 +7,7 @@ using namespace std;
 namespace Config {
     const int CELL_SIZE = 100;
     const long long MOVE_TIME_PER_CELL_MS = 1000;
+    const long long JUMP_DURATION_MS = 1000;
     const string EMPTY_CELL = ".";
     const string BOARD_HEADER = "Board:";
     const string COMMANDS_HEADER = "Commands:";

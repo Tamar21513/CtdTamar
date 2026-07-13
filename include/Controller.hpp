@@ -18,6 +18,7 @@ private:
 public:
     Controller(GameEngine& engine);
     ControllerResult click(int x, int y);
+    ControllerResult jump(int x, int y);
     bool hasSelection() const;
     optional<Position> getSelectedCell() const;
 };

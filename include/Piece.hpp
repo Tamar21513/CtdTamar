@@ -21,6 +21,7 @@ enum class PieceKind {
 enum class PieceState {
     Idle,
     Moving,
+    Airborne,
     Captured
 };
 

@@ -31,6 +31,8 @@ namespace Reasons {
     const string CLICK_OUTSIDE = "click_outside";
     const string EMPTY_CLICK = "empty_click";
     const string MOTION_IN_PROGRESS = "motion_in_progress";
+    const string CANNOT_JUMP = "cannot_jump";
+    const string JUMP_STARTED = "jump_started";
 }
 
 #endif

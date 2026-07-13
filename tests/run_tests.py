@@ -1717,6 +1717,161 @@ print board
 . . .
 """
 },
+{
+    "name": "jump_keeps_piece_on_same_logical_cell",
+    "input": """Board:
+wN . .
+. . .
+. . .
+Commands:
+jump 50 50
+wait 999
+print board
+wait 1
+print board
+""",
+    "expected": """wN . .
+. . .
+. . .
+wN . .
+. . .
+. . .
+"""
+},
+{
+    "name": "airborne_piece_captures_arriving_enemy",
+    "input": """Board:
+wN . .
+. . .
+bR . .
+Commands:
+click 50 250
+click 50 50
+jump 50 50
+wait 2000
+print board
+""",
+    "expected": """wN . .
+. . .
+. . .
+"""
+},
+{
+    "name": "airborne_piece_lands_normally_if_no_enemy_arrives",
+    "input": """Board:
+wN . .
+. . .
+. . .
+Commands:
+jump 50 50
+wait 1000
+print board
+""",
+    "expected": """wN . .
+. . .
+. . .
+"""
+},
+{
+    "name": "moving_piece_cannot_jump",
+    "input": """Board:
+wR . .
+. . .
+. . .
+Commands:
+click 50 50
+click 250 50
+wait 500
+jump 50 50
+wait 1500
+print board
+""",
+    "expected": """. . wR
+. . .
+. . .
+"""
+},
+{
+    "name": "airborne_piece_cannot_start_move",
+    "input": """Board:
+wR . .
+. . .
+. . .
+Commands:
+jump 50 50
+click 50 50
+click 250 50
+wait 1000
+print board
+""",
+    "expected": """wR . .
+. . .
+. . .
+"""
+},
+{
+    "name": "piece_can_move_after_jump_lands",
+    "input": """Board:
+wR . .
+. . .
+. . .
+Commands:
+jump 50 50
+wait 1000
+click 50 50
+click 250 50
+wait 2000
+print board
+""",
+    "expected": """. . wR
+. . .
+. . .
+"""
+},
+{
+    "name": "friendly_piece_cannot_arrive_on_airborne_friendly_piece",
+    "input": """Board:
+wN . .
+. . .
+wR . .
+Commands:
+click 50 250
+click 50 50
+jump 50 50
+wait 2000
+print board
+""",
+    "expected": """wN . .
+. . .
+wR . .
+"""
+},
+{
+    "name": "enemy_arriving_after_jump_lands_captures_normally",
+    "input": """Board:
+wN . .
+. . .
+bR . .
+. . .
+Commands:
+click 50 250
+click 50 50
+jump 50 50
+wait 1000
+print board
+wait 1000
+print board
+""",
+    "expected": """wN . .
+. . .
+bR . .
+. . .
+bR . .
+. . .
+. . .
+. . .
+"""
+},
 
 ]
 
