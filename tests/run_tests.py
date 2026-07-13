@@ -1435,6 +1435,127 @@ print board
 bR . .
 """
     },
+{
+    "name": "capturing_enemy_king_ends_game_and_blocks_later_moves",
+    "input": """Board:
+wR . bK
+. . wN
+. . .
+Commands:
+click 50 50
+click 250 50
+wait 2000
+print board
+click 250 150
+click 50 250
+wait 2000
+print board
+""",
+    "expected": """. . wR
+. . wN
+. . .
+. . wR
+. . wN
+. . .
+"""
+},
+{
+    "name": "king_capture_does_not_end_game_before_arrival",
+    "input": """Board:
+wR . bK
+. . wN
+. . .
+Commands:
+click 50 50
+click 250 50
+wait 1000
+print board
+wait 1000
+print board
+""",
+    "expected": """wR . bK
+. . wN
+. . .
+. . wR
+. . wN
+. . .
+"""
+},
+{
+    "name": "white_piece_captures_black_king_game_over",
+    "input": """Board:
+wQ . .
+. bK .
+. . .
+Commands:
+click 50 50
+click 150 150
+wait 1000
+print board
+click 50 50
+click 250 50
+wait 2000
+print board
+""",
+    "expected": """. . .
+. wQ .
+. . .
+. . .
+. wQ .
+. . .
+"""
+},
+{
+    "name": "black_piece_captures_white_king_game_over",
+    "input": """Board:
+bQ . .
+. wK .
+. . .
+Commands:
+click 50 50
+click 150 150
+wait 1000
+print board
+click 150 150
+click 250 250
+wait 1000
+print board
+""",
+    "expected": """. . .
+. bQ .
+. . .
+. . .
+. bQ .
+. . .
+"""
+},
+{
+    "name": "king_capture_rejected_by_motion_in_progress_does_not_end_game",
+    "input": """Board:
+wR . bK
+bR . .
+. . .
+Commands:
+click 50 150
+click 250 150
+wait 500
+click 50 50
+click 250 50
+wait 1500
+print board
+click 50 50
+click 250 50
+wait 2000
+print board
+""",
+    "expected": """wR . bK
+. . bR
+. . .
+. . wR
+. . bR
+. . .
+"""
+},
 
 ]
 
