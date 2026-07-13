@@ -112,10 +112,10 @@ bool PieceRules::canMoveLikePawn(const Board& board, const Position& source, con
 
     if (color == PieceColor::White) {
         direction = -1;
-        startRow = board.getHeight() - 1;
+        startRow = board.getHeight() - 2;
     } else {
         direction = 1;
-        startRow = 0;
+        startRow = 1;
     }
 
     int rowDiff = destination.getRow() - source.getRow();

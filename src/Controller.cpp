@@ -33,10 +33,19 @@ ControllerResult Controller::click(int x, int y) {
         return {true, Reasons::SELECTED};
     }
 
-    // קליק שני — מבקשים מהלך
+    //יש כלי נבחר
     Position source = selectedCell.value();
-    selectedCell = nullopt;
+    
+    shared_ptr<Piece> selectedPiece = engine.getBoard().getPieceAt(source);
+    shared_ptr<Piece> clickedPiece = engine.getBoard().getPieceAt(position);
 
+    // אם הקליק השני הוא על כלי ידידותי אחר — מחליפים בחירה
+    if (selectedPiece != nullptr && clickedPiece != nullptr && selectedPiece->getColor() == clickedPiece->getColor()) {
+        selectedCell = position;
+        return {true, Reasons::SELECTED};
+    }
+
+    selectedCell = nullopt;
     MoveResult result = engine.requestMove(source, position);
 
     return {result.isAccepted, result.reason};
