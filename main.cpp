@@ -1,18 +1,79 @@
-// Git repository: https://github.com/Tamar21513/CtdTamar
+#include <iostream>
+#include <string>
+#include <vector>
 
-#include "include/BoardUtils.hpp"
-#include "include/Game.hpp"
+#include "include/BoardParser.hpp"
+#include "include/BoardPrinter.hpp"
+#include "include/Config.hpp"
+#include "include/GameEngine.hpp"
+#include "include/Controller.hpp"
 
-int main() {
-    vector<vector<string>> textBoard = readTextBoard();
+using namespace std;
 
-    if (!ifBoardProperly(textBoard)) {
-        return 0;
+string trim(const string& str) {
+    size_t start = str.find_first_not_of(" \t\r\n");
+
+    if (start == string::npos) {
+        return "";
     }
 
-    Board board = boardConstruction(textBoard);
+    size_t end = str.find_last_not_of(" \t\r\n");
 
-    runCommands(board);
+    return str.substr(start, end - start + 1);
+}
+
+int main() {
+    vector<string> boardLines;
+    string line;
+    bool readingBoard = false;
+
+    while (getline(cin, line)) {
+        line = trim(line);
+
+        if (line == Config::BOARD_HEADER || line == "Board") {
+            readingBoard = true;
+            continue;
+        }
+
+        if (line == Config::COMMANDS_HEADER || line == "Commands") {
+            break;
+        }
+
+        if (readingBoard && !line.empty()) {
+            boardLines.push_back(line);
+        }
+    }
+
+    Board board = BoardParser::parse(boardLines);
+
+    GameEngine engine(board);
+    Controller controller(engine);
+
+    string command;
+
+    while (cin >> command) {
+        if (command == "click") {
+            int x;
+            int y;
+            cin >> x >> y;
+
+            controller.click(x, y);
+        }
+        else if (command == "print") {
+            string what;
+            cin >> what;
+
+            if (what == "board") {
+                cout << BoardPrinter::print(engine.getBoard());
+            }
+        }
+        else if (command == "wait") {
+            long long ms;
+            cin >> ms;
+
+            engine.wait(ms);
+        }
+    }
 
     return 0;
 }

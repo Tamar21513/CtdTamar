@@ -8,10 +8,17 @@ EXE_PATH = os.path.join(ROOT_DIR, "main.exe")
 
 CPP_FILES = [
     "main.cpp",
+    os.path.join("src", "Position.cpp"),
     os.path.join("src", "Piece.cpp"),
-    os.path.join("src", "Rules.cpp"),
-    os.path.join("src", "BoardUtils.cpp"),
-    os.path.join("src", "Game.cpp"),
+    os.path.join("src", "Board.cpp"),
+    os.path.join("src", "BoardParser.cpp"),
+    os.path.join("src", "BoardPrinter.cpp"),
+    os.path.join("src", "BoardMapper.cpp"),
+    os.path.join("src", "PieceRules.cpp"),
+    os.path.join("src", "RuleEngine.cpp"),
+    os.path.join("src", "GameEngine.cpp"),
+    os.path.join("src", "Controller.cpp"),
+    os.path.join("src", "RealTimeArbiter.cpp"),
 ]
 
 tests = [
@@ -131,7 +138,7 @@ print board
 """
     },
     {
-        "name": "friendly_piece_replaces_selection",
+        "name": "friendly_piece_as_second_click_is_rejected_and_clears_selection",
         "input": """Board:
 wK wR .
 . . .
@@ -143,7 +150,7 @@ click 250 50
 wait 1000
 print board
 """,
-        "expected": """wK . wR
+        "expected": """wK wR .
 . . .
 . . .
 """
@@ -1289,6 +1296,146 @@ print board
 bR . .
 """
     },
+    # Iteration 8 - invalid moves and error stability
+    {
+        "name": "blocked_rook_path_does_not_change_board",
+        "input": """Board:
+wR wP .
+. . .
+. . bK
+Commands:
+click 50 50
+click 250 50
+wait 3000
+print board
+""",
+        "expected": """wR wP .
+. . .
+. . bK
+"""
+    },
+    {
+        "name": "friendly_destination_does_not_change_board",
+        "input": """Board:
+wK wR .
+. . .
+. . bK
+Commands:
+click 50 50
+click 150 50
+wait 1000
+print board
+""",
+        "expected": """wK wR .
+. . .
+. . bK
+"""
+    },
+    {
+        "name": "illegal_move_does_not_start_motion",
+        "input": """Board:
+wR . .
+bR . .
+Commands:
+click 50 50
+click 150 150
+click 50 150
+click 250 150
+wait 2000
+print board
+""",
+        "expected": """wR . .
+. . bR
+"""
+    },
+    {
+        "name": "outside_click_with_selection_clears_selection",
+        "input": """Board:
+wR . .
+. . .
+. . bK
+Commands:
+click 50 50
+click 500 500
+click 250 50
+wait 2000
+print board
+""",
+        "expected": """wR . .
+. . .
+. . bK
+"""
+    },
+    {
+        "name": "outside_click_without_selection_is_ignored",
+        "input": """Board:
+wR . .
+. . .
+. . bK
+Commands:
+click 500 500
+wait 1000
+print board
+""",
+        "expected": """wR . .
+. . .
+. . bK
+"""
+    },
+    {
+        "name": "empty_first_click_does_not_select",
+        "input": """Board:
+wR . .
+. . .
+. . bK
+Commands:
+click 150 50
+click 250 50
+wait 2000
+print board
+""",
+        "expected": """wR . .
+. . .
+. . bK
+"""
+    },
+    {
+        "name": "illegal_second_click_clears_selection",
+        "input": """Board:
+wR . .
+. . .
+. . bK
+Commands:
+click 50 50
+click 150 150
+click 250 50
+wait 2000
+print board
+""",
+        "expected": """wR . .
+. . .
+. . bK
+"""
+    },
+    {
+        "name": "motion_in_progress_rejects_second_move",
+        "input": """Board:
+wR . .
+bR . .
+Commands:
+click 50 50
+click 250 50
+wait 500
+click 50 150
+click 250 150
+wait 1500
+print board
+""",
+        "expected": """. . wR
+bR . .
+"""
+    },
+
 ]
 
 

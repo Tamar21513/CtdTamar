@@ -1,40 +1,71 @@
 #include "../include/Piece.hpp"
 
-Piece::Piece(string color, string type, long long cooldownMs) {
+Piece::Piece(int id, PieceColor color, PieceKind kind) {
+    this->id = id;
     this->color = color;
-    this->type = type;
-    this->cooldownMs = cooldownMs;
-    this->lastMovedAt = 0;
+    this->kind = kind;
+    this->state = PieceState::Idle;
 }
 
-string Piece::getColor() const {
+int Piece::getId() const {
+    return id;
+}
+
+PieceColor Piece::getColor() const {
     return color;
 }
 
-string Piece::getType() const {
-    return type;
+PieceKind Piece::getKind() const {
+    return kind;
 }
 
-long long Piece::getCooldownMs() const {
-    return cooldownMs;
+PieceState Piece::getState() const {
+    return state;
 }
 
-long long Piece::getLastMovedAt() const {
-    return lastMovedAt;
+void Piece::setState(PieceState newState) {
+    state = newState;
 }
 
 string Piece::token() const {
-    return color + type;
+    string result = "";
+    result += colorToChar(color);
+    result += kindToChar(kind);
+    return result;
 }
 
-bool Piece::isSameColor(const Piece& other) const {
-    return color == other.color;
+PieceColor Piece::colorFromChar(char colorChar) {
+    if (colorChar == 'w') {
+        return PieceColor::White;
+    }
+
+    return PieceColor::Black;
 }
 
-bool Piece::canMove(long long currentTimeMs) const {
-    return currentTimeMs - lastMovedAt >= cooldownMs;
+PieceKind Piece::kindFromChar(char kindChar) {
+    if (kindChar == 'K') return PieceKind::King;
+    if (kindChar == 'Q') return PieceKind::Queen;
+    if (kindChar == 'R') return PieceKind::Rook;
+    if (kindChar == 'B') return PieceKind::Bishop;
+    if (kindChar == 'N') return PieceKind::Knight;
+
+    return PieceKind::Pawn;
 }
 
-void Piece::markMoved(long long currentTimeMs) {
-    lastMovedAt = currentTimeMs;
+char Piece::colorToChar(PieceColor color) {
+    if (color == PieceColor::White) {
+        return 'w';
+    }
+
+    return 'b';
+}
+
+char Piece::kindToChar(PieceKind kind) {
+    if (kind == PieceKind::King) return 'K';
+    if (kind == PieceKind::Queen) return 'Q';
+    if (kind == PieceKind::Rook) return 'R';
+    if (kind == PieceKind::Bishop) return 'B';
+    if (kind == PieceKind::Knight) return 'N';
+
+    return 'P';
 }
