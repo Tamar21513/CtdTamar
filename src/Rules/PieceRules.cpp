@@ -1,4 +1,4 @@
-#include "../include/PieceRules.hpp"
+#include "../../include/Rules/PieceRules.hpp"
 
 #include <cmath>
 using namespace std;

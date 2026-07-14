@@ -1,4 +1,4 @@
-#include "../include/Controller.hpp"
+#include "../../include/Control/Controller.hpp"
 
 Controller::Controller(GameEngine& engine) : engine(engine) {
     selectedCell = nullopt;

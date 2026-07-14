@@ -1,5 +1,5 @@
-#include "../include/RealTimeArbiter.hpp"
-#include "../include/Config.hpp"
+#include "../../include/Realtime/RealTimeArbiter.hpp"
+#include "../../include/Core/Config.hpp"
 
 #include <cmath>
 #include <algorithm>

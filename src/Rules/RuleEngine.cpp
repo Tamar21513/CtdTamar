@@ -1,5 +1,5 @@
-#include "../include/RuleEngine.hpp"
-#include "../include/PieceRules.hpp"
+#include "../../include/Rules/RuleEngine.hpp"
+#include "../../include/Rules/PieceRules.hpp"
 
 bool RuleEngine::isLegalByPieceKind(const Board& board, const Position& source, const Position& destination) const {
     shared_ptr<Piece> piece = board.getPieceAt(source);

@@ -1,4 +1,4 @@
-#include "../include/GameEngine.hpp"
+#include "../../include/Engine/GameEngine.hpp"
 
 GameEngine::GameEngine(Board board) {
     this->board = board;

@@ -4,11 +4,11 @@
 #include <vector>
 #include <memory>
 
-#include "Board.hpp"
-#include "Position.hpp"
-#include "RuleEngine.hpp"
-#include "Results.hpp"
-#include "Config.hpp"
+#include "../Core/Board.hpp"
+#include "../Core/Position.hpp"
+#include "../Rules/RuleEngine.hpp"
+#include "../Core/Results.hpp"
+#include "../Core/Config.hpp"
 
 using namespace std;
 

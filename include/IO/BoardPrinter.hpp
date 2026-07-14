@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include "Board.hpp"
+#include "../Core/Board.hpp"
 
 using namespace std;
 

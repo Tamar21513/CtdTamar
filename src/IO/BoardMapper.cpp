@@ -1,5 +1,5 @@
-#include "../include/BoardMapper.hpp"
-#include "../include/Config.hpp"
+#include "../../include/IO/BoardMapper.hpp"
+#include "../../include/Core/Config.hpp"
 
 optional<Position> BoardMapper::pixelToCell(int x, int y, const Board& board) {
     if (x < 0 || y < 0) {

@@ -1,4 +1,4 @@
-#include "../include/Board.hpp"
+#include "../../include/Core/Board.hpp"
 
 Board::Board() {
     this->height = 0;

@@ -1,6 +1,6 @@
-#include "doctest.h"
-#include "Config.hpp"
-#include "RealTimeArbiter.hpp"
+#include "../../include/ThirdParty/doctest.h"
+#include "../../include/Core/Config.hpp"
+#include "../../include/Realtime/RealTimeArbiter.hpp"
 #include "TestHelpers.hpp"
 
 TEST_SUITE("RealTimeArbiter") {

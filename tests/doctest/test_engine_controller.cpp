@@ -1,7 +1,7 @@
-#include "doctest.h"
-#include "Controller.hpp"
-#include "GameEngine.hpp"
-#include "Results.hpp"
+#include "../../include/ThirdParty/doctest.h"
+#include "../../include/Control/Controller.hpp"
+#include "../../include/Engine/GameEngine.hpp"
+#include "../../include/Core/Results.hpp"
 #include "TestHelpers.hpp"
 
 TEST_SUITE("GameEngine basic movement") {

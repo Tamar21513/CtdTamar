@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "Board.hpp"
+#include "../Core/Board.hpp"
 
 using namespace std;
 

@@ -3,10 +3,10 @@
 
 #include <optional>
 
-#include "GameEngine.hpp"
-#include "BoardMapper.hpp"
-#include "Position.hpp"
-#include "Results.hpp"
+#include "../Engine/GameEngine.hpp"
+#include "../IO/BoardMapper.hpp"
+#include "../Core/Position.hpp"
+#include "../Core/Results.hpp"
 
 using namespace std;
 

@@ -2,11 +2,11 @@
 #include <string>
 #include <vector>
 
-#include "include/BoardParser.hpp"
-#include "include/BoardPrinter.hpp"
-#include "include/Config.hpp"
-#include "include/GameEngine.hpp"
-#include "include/Controller.hpp"
+#include "include/IO/BoardParser.hpp"
+#include "include/IO/BoardPrinter.hpp"
+#include "include/Core/Config.hpp"
+#include "include/Engine/GameEngine.hpp"
+#include "include/Control/Controller.hpp"
 
 using namespace std;
 

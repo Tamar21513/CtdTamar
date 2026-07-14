@@ -1,9 +1,9 @@
 #ifndef PIECE_RULES_HPP
 #define PIECE_RULES_HPP
 
-#include "Board.hpp"
-#include "Position.hpp"
-#include "Piece.hpp"
+#include "../Core/Board.hpp"
+#include "../Core/Position.hpp"
+#include "../Core/Piece.hpp"
 
 class PieceRules {
 private:

@@ -1,9 +1,9 @@
-#include "doctest.h"
-#include "Board.hpp"
-#include "BoardMapper.hpp"
-#include "BoardParser.hpp"
-#include "BoardPrinter.hpp"
-#include "Config.hpp"
+#include "../../include/ThirdParty/doctest.h"
+#include "../../include/Core/Board.hpp"
+#include "../../include/IO/BoardMapper.hpp"
+#include "../../include/IO/BoardParser.hpp"
+#include "../../include/IO/BoardPrinter.hpp"
+#include "../../include/Core/Config.hpp"
 #include "TestHelpers.hpp"
 
 TEST_SUITE("Board") {

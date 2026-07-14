@@ -1,4 +1,4 @@
-#include "../include/Piece.hpp"
+#include "../../include/Core/Piece.hpp"
 
 Piece::Piece(int id, PieceColor color, PieceKind kind) {
     this->id = id;

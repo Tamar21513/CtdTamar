@@ -4,8 +4,8 @@
 #include <vector>
 #include <memory>
 
-#include "Position.hpp"
-#include "Piece.hpp"
+#include "../Core/Position.hpp"
+#include "../Core/Piece.hpp"
 
 using namespace std;
 

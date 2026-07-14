@@ -1,4 +1,4 @@
-#include "../include/Position.hpp"
+#include "../../include/Core/Position.hpp"
 
 Position::Position() {
     this->row = -1;

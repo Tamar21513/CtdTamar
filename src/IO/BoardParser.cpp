@@ -1,5 +1,5 @@
-#include "../include/BoardParser.hpp"
-#include "../include/Config.hpp"
+#include "../../include/IO/BoardParser.hpp"
+#include "../../include/Core/Config.hpp"
 
 #include <sstream>
 #include <iostream>

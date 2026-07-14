@@ -1,4 +1,4 @@
-#include "../include/BoardPrinter.hpp"
+#include "../../include/IO/BoardPrinter.hpp"
 
 string BoardPrinter::print(const Board& board) {
     string result = "";

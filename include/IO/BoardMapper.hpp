@@ -3,8 +3,8 @@
 
 #include <optional>
 
-#include "Board.hpp"
-#include "Position.hpp"
+#include "../Core/Board.hpp"
+#include "../Core/Position.hpp"
 
 using namespace std;
 

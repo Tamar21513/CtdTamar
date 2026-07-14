@@ -1,6 +1,6 @@
-#include "doctest.h"
-#include "Piece.hpp"
-#include "Position.hpp"
+#include "../../include/ThirdParty/doctest.h"
+#include "../../include/Core/Piece.hpp"
+#include "../../include/Core/Position.hpp"
 
 TEST_SUITE("Position") {
     TEST_CASE("default position is invalid sentinel") {

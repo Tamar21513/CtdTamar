@@ -1,7 +1,7 @@
-#include "doctest.h"
-#include "PieceRules.hpp"
-#include "RuleEngine.hpp"
-#include "Results.hpp"
+#include "../../include/ThirdParty/doctest.h"
+#include "../../include/Rules/PieceRules.hpp"
+#include "../../include/Rules/RuleEngine.hpp"
+#include "../../include/Core/Results.hpp"
 #include "TestHelpers.hpp"
 
 TEST_SUITE("Rook bishop queen rules") {
