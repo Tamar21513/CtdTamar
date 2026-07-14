@@ -76,6 +76,14 @@ void Board::removePiece(const Position& position) {
     cells[position.getRow()][position.getCol()] = nullptr;
 }
 
+void Board::setPieceAt(const Position& position, shared_ptr<Piece> piece) {
+    if (!isInside(position)) {
+        return;
+    }
+
+    cells[position.getRow()][position.getCol()] = piece;
+}
+
 void Board::movePiece(const Position& source, const Position& destination) {
     if (!isInside(source) || !isInside(destination)) {
         return;

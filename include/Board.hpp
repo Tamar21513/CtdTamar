@@ -28,6 +28,7 @@ public:
     bool isEmpty(const Position& position) const;
     bool placePiece(const Position& position, shared_ptr<Piece> piece);
     void removePiece(const Position& position);
+    void setPieceAt(const Position& position, shared_ptr<Piece> piece);
     void movePiece(const Position& source, const Position& destination);
 };
 

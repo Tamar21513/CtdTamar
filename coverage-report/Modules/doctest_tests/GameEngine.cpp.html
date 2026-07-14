@@ -1,0 +1,458 @@
+﻿<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+	<head>
+        <meta charset="utf-8"/>
+	    <title>GameEngine.cpp</title>
+	    <link href="../../third-party/google-code-prettify/prettify-CppCoverage.css" type="text/css" rel="stylesheet" />
+	    <script type="text/javascript" src="../../third-party/google-code-prettify/prettify.js"></script>
+	</head>
+    <body onload="prettyPrint()">
+        <h4></h4>
+        <pre class="prettyprint lang-cpp linenums">
+#include "../include/GameEngine.hpp"
+
+<span style = "background-color:#dfd">GameEngine::GameEngine(Board board) {
+    this-&gt;board = board;
+    this-&gt;gameOver = false;
+    this-&gt;currentTimeMs = 0;
+    this-&gt;nextMoveOrder = 0;
+}</span>
+
+<span style = "background-color:#dfd">int GameEngine::signValue(int value) const {
+    if (value &gt; 0) {
+        return 1;</span>
+    }
+
+<span style = "background-color:#dfd">    if (value &lt; 0) {
+        return -1;</span>
+    }
+
+<span style = "background-color:#dfd">    return 0;
+}</span>
+
+<span style = "background-color:#dfd">MoveResult GameEngine::requestMove(const Position&amp; source, const Position&amp; destination) {
+    if (gameOver) {
+        return {false, Reasons::GAME_OVER};</span>
+    }
+
+<span style = "background-color:#dfd">    MoveValidation validation = ruleEngine.validateMove(board, source, destination);</span>
+
+<span style = "background-color:#dfd">    if (!validation.isValid) {
+        return {false, validation.reason};</span>
+    }
+
+<span style = "background-color:#dfd">    shared_ptr&lt;Piece&gt; piece = board.getPieceAt(source);</span>
+
+<span style = "background-color:#dfd">    if (piece == nullptr) {</span>
+<span style = "background-color:#fdd">        return {false, Reasons::EMPTY_SOURCE};</span>
+    }
+
+<span style = "background-color:#dfd">    if (piece-&gt;getState() != PieceState::Idle) {
+        return {false, Reasons::MOTION_IN_PROGRESS};</span>
+    }
+
+<span style = "background-color:#dfd">    MovingPieceInfo movingPiece;</span>
+
+<span style = "background-color:#dfd">    movingPiece.piece = piece;
+    movingPiece.source = source;
+    movingPiece.destination = destination;
+    movingPiece.currentVirtualCell = source;
+    movingPiece.rowStep = signValue(destination.getRow() - source.getRow());
+    movingPiece.colStep = signValue(destination.getCol() - source.getCol());
+    movingPiece.nextStepTimeMs = currentTimeMs + Config::MOVE_TIME_PER_CELL_MS;
+    movingPiece.order = nextMoveOrder;</span>
+
+<span style = "background-color:#dfd">    nextMoveOrder++;</span>
+
+<span style = "background-color:#dfd">    movingPieces.push_back(movingPiece);</span>
+
+<span style = "background-color:#dfd">    piece-&gt;setState(PieceState::Moving);</span>
+
+<span style = "background-color:#dfd">    return {true, Reasons::OK};</span>
+<span style = "background-color:#fdd">}</span>
+
+<span style = "background-color:#dfd">MoveResult GameEngine::requestJump(const Position&amp; cell) {
+    if (gameOver) {
+        return {false, Reasons::GAME_OVER};</span>
+    }
+
+<span style = "background-color:#dfd">    if (!board.isInside(cell)) {
+        return {false, Reasons::OUTSIDE_BOARD};</span>
+    }
+
+<span style = "background-color:#dfd">    shared_ptr&lt;Piece&gt; piece = board.getPieceAt(cell);</span>
+
+<span style = "background-color:#dfd">    if (piece == nullptr) {
+        return {false, Reasons::EMPTY_SOURCE};</span>
+    }
+
+<span style = "background-color:#dfd">    if (piece-&gt;getState() != PieceState::Idle) {
+        return {false, Reasons::CANNOT_JUMP};</span>
+    }
+
+<span style = "background-color:#dfd">    JumpInfo jumpInfo;</span>
+
+<span style = "background-color:#dfd">    jumpInfo.piece = piece;
+    jumpInfo.cell = cell;
+    jumpInfo.finishTimeMs = currentTimeMs + Config::JUMP_DURATION_MS;</span>
+
+<span style = "background-color:#dfd">    jumpingPieces.push_back(jumpInfo);</span>
+
+<span style = "background-color:#dfd">    piece-&gt;setState(PieceState::Airborne);</span>
+
+<span style = "background-color:#dfd">    return {true, Reasons::JUMP_STARTED};</span>
+<span style = "background-color:#fdd">}</span>
+
+<span style = "background-color:#dfd">void GameEngine::wait(long long ms) {
+    currentTimeMs += ms;
+    processTimeEvents();
+}</span>
+
+<span style = "background-color:#dfd">void GameEngine::processTimeEvents() {
+    while (true) {
+        int movingIndex = findNextMovingPieceIndex();
+        int jumpIndex = findNextJumpIndex();</span>
+
+<span style = "background-color:#dfd">        bool hasMoveEvent = movingIndex != -1;
+        bool hasJumpEvent = jumpIndex != -1;</span>
+
+<span style = "background-color:#dfd">        if (!hasMoveEvent &amp;&amp; !hasJumpEvent) {
+            break;</span>
+        }
+
+<span style = "background-color:#dfd">        if (hasMoveEvent &amp;&amp; !hasJumpEvent) {
+            processMovingPieceStep(movingIndex);
+            continue;</span>
+        }
+
+<span style = "background-color:#dfd">        if (!hasMoveEvent &amp;&amp; hasJumpEvent) {
+            processJumpLanding(jumpIndex);
+            continue;</span>
+        }
+
+<span style = "background-color:#dfd">        long long moveTime = movingPieces[movingIndex].nextStepTimeMs;
+        long long jumpTime = jumpingPieces[jumpIndex].finishTimeMs;</span>
+
+<span style = "background-color:#dfd">        if (moveTime &lt;= jumpTime) {
+            processMovingPieceStep(movingIndex);
+        } else {</span>
+<span style = "background-color:#fdd">            processJumpLanding(jumpIndex);</span>
+        }
+<span style = "background-color:#dfd">    }
+}</span>
+
+<span style = "background-color:#dfd">int GameEngine::findNextMovingPieceIndex() const {
+    int bestIndex = -1;</span>
+
+<span style = "background-color:#dfd">    for (size_t i = 0; i &lt; movingPieces.size(); i++) {
+        if (movingPieces[i].piece == nullptr) {</span>
+<span style = "background-color:#fdd">            continue;</span>
+        }
+
+<span style = "background-color:#dfd">        if (movingPieces[i].piece-&gt;getState() != PieceState::Moving) {</span>
+<span style = "background-color:#fdd">            continue;</span>
+        }
+
+<span style = "background-color:#dfd">        if (movingPieces[i].nextStepTimeMs &gt; currentTimeMs) {
+            continue;</span>
+        }
+
+<span style = "background-color:#dfd">        if (bestIndex == -1) {
+            bestIndex = static_cast&lt;int&gt;(i);
+            continue;</span>
+        }
+
+<span style = "background-color:#dfd">        bool earlierTime = movingPieces[i].nextStepTimeMs &lt; movingPieces[bestIndex].nextStepTimeMs;
+        bool sameTimeButEarlierOrder = movingPieces[i].nextStepTimeMs == movingPieces[bestIndex].nextStepTimeMs &amp;&amp; movingPieces[i].order &lt; movingPieces[bestIndex].order;</span>
+
+<span style = "background-color:#dfd">        if (earlierTime || sameTimeButEarlierOrder) {
+            bestIndex = static_cast&lt;int&gt;(i);</span>
+        }
+<span style = "background-color:#dfd">    }</span>
+
+<span style = "background-color:#dfd">    return bestIndex;
+}</span>
+
+<span style = "background-color:#dfd">int GameEngine::findNextJumpIndex() const {
+    int bestIndex = -1;</span>
+
+<span style = "background-color:#dfd">    for (size_t i = 0; i &lt; jumpingPieces.size(); i++) {
+        if (jumpingPieces[i].piece == nullptr) {</span>
+<span style = "background-color:#fdd">            continue;</span>
+        }
+
+<span style = "background-color:#dfd">        if (jumpingPieces[i].piece-&gt;getState() != PieceState::Airborne) {</span>
+<span style = "background-color:#fdd">            continue;</span>
+        }
+
+<span style = "background-color:#dfd">        if (jumpingPieces[i].finishTimeMs &gt; currentTimeMs) {
+            continue;</span>
+        }
+
+<span style = "background-color:#dfd">        if (bestIndex == -1) {
+            bestIndex = static_cast&lt;int&gt;(i);
+            continue;</span>
+        }
+
+<span style = "background-color:#fdd">        if (jumpingPieces[i].finishTimeMs &lt; jumpingPieces[bestIndex].finishTimeMs) {
+            bestIndex = static_cast&lt;int&gt;(i);</span>
+        }
+<span style = "background-color:#fdd">    }</span>
+
+<span style = "background-color:#dfd">    return bestIndex;
+}</span>
+
+<span style = "background-color:#dfd">void GameEngine::processMovingPieceStep(int movingIndex) {
+    if (movingIndex &lt; 0 || movingIndex &gt;= static_cast&lt;int&gt;(movingPieces.size())) {</span>
+<span style = "background-color:#fdd">        return;</span>
+    }
+
+<span style = "background-color:#dfd">    MovingPieceInfo&amp; movingPiece = movingPieces[movingIndex];</span>
+
+<span style = "background-color:#dfd">    if (movingPiece.piece == nullptr) {</span>
+<span style = "background-color:#fdd">        return;</span>
+    }
+
+<span style = "background-color:#dfd">    if (movingPiece.piece-&gt;getState() != PieceState::Moving) {</span>
+<span style = "background-color:#fdd">        return;</span>
+    }
+
+<span style = "background-color:#dfd">    Position nextCell(</span>
+        movingPiece.currentVirtualCell.getRow() + movingPiece.rowStep,
+        movingPiece.currentVirtualCell.getCol() + movingPiece.colStep
+    );
+
+<span style = "background-color:#dfd">    shared_ptr&lt;Piece&gt; targetPiece = findPieceAtRealOrVirtualCell(nextCell, movingPiece.piece);</span>
+
+<span style = "background-color:#dfd">    if (targetPiece == nullptr) {
+        movingPiece.currentVirtualCell = nextCell;</span>
+
+<span style = "background-color:#dfd">        if (nextCell == movingPiece.destination) {
+            stopMovingPieceAt(movingPiece, nextCell);
+        } else {
+            movingPiece.nextStepTimeMs += Config::MOVE_TIME_PER_CELL_MS;</span>
+        }
+
+<span style = "background-color:#dfd">        return;</span>
+    }
+
+<span style = "background-color:#dfd">    if (targetPiece-&gt;getColor() == movingPiece.piece-&gt;getColor()) {
+        stopMovingPieceAt(movingPiece, movingPiece.currentVirtualCell);
+        return;</span>
+    }
+
+<span style = "background-color:#dfd">    if (targetPiece-&gt;getState() == PieceState::Airborne) {
+        bool movingKingWasCaptured = movingPiece.piece-&gt;getKind() == PieceKind::King;</span>
+
+<span style = "background-color:#dfd">        movingPiece.piece-&gt;setState(PieceState::Captured);
+        removePieceFromBoard(movingPiece.piece);
+        removeMovingPiece(movingPiece.piece);</span>
+
+<span style = "background-color:#dfd">        if (movingKingWasCaptured) {
+            gameOver = true;</span>
+        }
+
+<span style = "background-color:#dfd">        return;</span>
+    }
+
+<span style = "background-color:#dfd">    bool capturedKing = targetPiece-&gt;getKind() == PieceKind::King;</span>
+
+<span style = "background-color:#dfd">    targetPiece-&gt;setState(PieceState::Captured);
+    removePieceFromBoard(targetPiece);
+    removeMovingPiece(targetPiece);</span>
+
+<span style = "background-color:#dfd">    stopMovingPieceAt(movingPiece, nextCell);</span>
+
+<span style = "background-color:#dfd">    if (capturedKing) {
+        gameOver = true;</span>
+    }
+<span style = "background-color:#dfd">}</span>
+
+<span style = "background-color:#dfd">void GameEngine::processJumpLanding(int jumpIndex) {
+    if (jumpIndex &lt; 0 || jumpIndex &gt;= static_cast&lt;int&gt;(jumpingPieces.size())) {</span>
+<span style = "background-color:#fdd">        return;</span>
+    }
+
+<span style = "background-color:#dfd">    JumpInfo jumpInfo = jumpingPieces[jumpIndex];</span>
+
+<span style = "background-color:#dfd">    jumpingPieces.erase(jumpingPieces.begin() + jumpIndex);</span>
+
+<span style = "background-color:#dfd">    if (jumpInfo.piece == nullptr) {</span>
+<span style = "background-color:#fdd">        return;</span>
+    }
+
+<span style = "background-color:#dfd">    if (jumpInfo.piece-&gt;getState() != PieceState::Airborne) {</span>
+<span style = "background-color:#fdd">        return;</span>
+    }
+
+<span style = "background-color:#dfd">    shared_ptr&lt;Piece&gt; pieceOnBoard = board.getPieceAt(jumpInfo.cell);</span>
+
+<span style = "background-color:#dfd">    if (pieceOnBoard == jumpInfo.piece) {
+        jumpInfo.piece-&gt;setState(PieceState::Idle);</span>
+    }
+<span style = "background-color:#dfd">}</span>
+
+<span style = "background-color:#dfd">shared_ptr&lt;Piece&gt; GameEngine::findPieceAtRealOrVirtualCell(const Position&amp; cell, shared_ptr&lt;Piece&gt; exceptPiece) const {
+    for (size_t i = 0; i &lt; movingPieces.size(); i++) {
+        shared_ptr&lt;Piece&gt; movingPiece = movingPieces[i].piece;</span>
+
+<span style = "background-color:#dfd">        if (movingPiece == nullptr) {</span>
+<span style = "background-color:#fdd">            continue;</span>
+        }
+
+<span style = "background-color:#dfd">        if (movingPiece == exceptPiece) {
+            continue;</span>
+        }
+
+<span style = "background-color:#dfd">        if (movingPiece-&gt;getState() != PieceState::Moving) {</span>
+<span style = "background-color:#fdd">            continue;</span>
+        }
+
+<span style = "background-color:#dfd">        if (movingPieces[i].currentVirtualCell == cell) {
+            return movingPiece;</span>
+        }
+<span style = "background-color:#dfd">    }</span>
+
+<span style = "background-color:#dfd">    shared_ptr&lt;Piece&gt; boardPiece = board.getPieceAt(cell);</span>
+
+<span style = "background-color:#dfd">    if (boardPiece == nullptr) {
+        return nullptr;</span>
+    }
+
+<span style = "background-color:#dfd">    if (boardPiece == exceptPiece) {</span>
+<span style = "background-color:#fdd">        return nullptr;</span>
+    }
+
+<span style = "background-color:#dfd">    if (boardPiece-&gt;getState() == PieceState::Moving) {
+        int movingIndex = findMovingPieceIndex(boardPiece);</span>
+
+<span style = "background-color:#dfd">        if (movingIndex != -1 &amp;&amp; movingPieces[movingIndex].currentVirtualCell != cell) {
+            return nullptr;</span>
+        }
+    }
+
+<span style = "background-color:#dfd">    return boardPiece;
+}</span>
+
+<span style = "background-color:#dfd">int GameEngine::findMovingPieceIndex(shared_ptr&lt;Piece&gt; piece) const {
+    for (size_t i = 0; i &lt; movingPieces.size(); i++) {
+        if (movingPieces[i].piece == piece) {
+            return static_cast&lt;int&gt;(i);</span>
+        }
+<span style = "background-color:#fdd">    }</span>
+
+<span style = "background-color:#fdd">    return -1;</span>
+<span style = "background-color:#dfd">}</span>
+
+<span style = "background-color:#dfd">void GameEngine::removeMovingPiece(shared_ptr&lt;Piece&gt; piece) {
+    vector&lt;MovingPieceInfo&gt; remaining;</span>
+
+<span style = "background-color:#dfd">    for (size_t i = 0; i &lt; movingPieces.size(); i++) {
+        if (movingPieces[i].piece != piece) {
+            remaining.push_back(movingPieces[i]);</span>
+        }
+<span style = "background-color:#dfd">    }</span>
+
+<span style = "background-color:#dfd">    movingPieces = remaining;
+}</span>
+
+<span style = "background-color:#dfd">Position GameEngine::getLogicalCellOfPiece(shared_ptr&lt;Piece&gt; piece) const {
+    for (int row = 0; row &lt; board.getHeight(); row++) {
+        for (int col = 0; col &lt; board.getWidth(); col++) {
+            Position position(row, col);</span>
+
+<span style = "background-color:#dfd">            if (board.getPieceAt(position) == piece) {
+                return position;</span>
+            }
+<span style = "background-color:#dfd">        }
+    }</span>
+
+<span style = "background-color:#fdd">    return Position(-1, -1);</span>
+<span style = "background-color:#dfd">}</span>
+
+<span style = "background-color:#dfd">void GameEngine::removePieceFromBoard(shared_ptr&lt;Piece&gt; piece) {
+    Position logicalCell = getLogicalCellOfPiece(piece);</span>
+
+<span style = "background-color:#dfd">    if (board.isInside(logicalCell)) {
+        board.removePiece(logicalCell);</span>
+    }
+<span style = "background-color:#dfd">}</span>
+
+<span style = "background-color:#dfd">void GameEngine::commitPieceToCell(shared_ptr&lt;Piece&gt; piece, const Position&amp; source, const Position&amp; destination) {
+    if (piece == nullptr) {</span>
+<span style = "background-color:#fdd">        return;</span>
+    }
+
+<span style = "background-color:#dfd">    if (!board.isInside(source) || !board.isInside(destination)) {</span>
+<span style = "background-color:#fdd">        return;</span>
+    }
+<span style = "background-color:#dfd">    shared_ptr&lt;Piece&gt; pieceAtSource = board.getPieceAt(source);
+    if (pieceAtSource == piece) {
+        board.removePiece(source);</span>
+    }
+
+<span style = "background-color:#dfd">    board.setPieceAt(destination, piece);
+}</span>
+
+<span style = "background-color:#dfd">void GameEngine::stopMovingPieceAt(MovingPieceInfo&amp; movingPiece, const Position&amp; finalCell) {
+    shared_ptr&lt;Piece&gt; piece = movingPiece.piece;</span>
+
+<span style = "background-color:#dfd">    if (piece == nullptr) {</span>
+<span style = "background-color:#fdd">        return;</span>
+    }
+
+<span style = "background-color:#dfd">    Position source = movingPiece.source;</span>
+
+<span style = "background-color:#dfd">    commitPieceToCell(piece, source, finalCell);</span>
+
+<span style = "background-color:#dfd">    piece-&gt;setState(PieceState::Idle);</span>
+
+<span style = "background-color:#dfd">    promotePawnIfNeeded(piece, finalCell);</span>
+
+<span style = "background-color:#dfd">    removeMovingPiece(piece);
+}</span>
+
+<span style = "background-color:#dfd">void GameEngine::promotePawnIfNeeded(shared_ptr&lt;Piece&gt; piece, const Position&amp; cell) {
+    if (piece == nullptr) {</span>
+<span style = "background-color:#fdd">        return;</span>
+    }
+
+<span style = "background-color:#dfd">    if (piece-&gt;getKind() != PieceKind::Pawn) {
+        return;</span>
+    }
+
+<span style = "background-color:#dfd">    bool whiteReachedLastRow =</span>
+        piece-&gt;getColor() == PieceColor::White &amp;&amp;
+        cell.getRow() == 0;
+
+<span style = "background-color:#dfd">    bool blackReachedLastRow =</span>
+        piece-&gt;getColor() == PieceColor::Black &amp;&amp;
+        cell.getRow() == board.getHeight() - 1;
+
+<span style = "background-color:#dfd">    if (whiteReachedLastRow || blackReachedLastRow) {
+        piece-&gt;setKind(PieceKind::Queen);</span>
+    }
+<span style = "background-color:#dfd">}</span>
+
+<span style = "background-color:#dfd">const Board&amp; GameEngine::getBoard() const {
+    return board;
+}</span>
+
+<span style = "background-color:#dfd">bool GameEngine::isGameOver() const {
+    return gameOver;
+}</span></pre>
+        <hr />
+        <table width="100%">
+            <thead>
+                <tr>
+                    <th align="center">
+                        <small>Generated by</small>
+                        <a href="https://github.com/OpenCppCoverage/OpenCppCoverage/releases">
+                            <strong>OpenCppCoverage (Version: 0.9.9.0)</strong>
+                        </a>
+                    </th>
+                </tr>
+            </thead>
+        </table>
+    </body>
+</html>

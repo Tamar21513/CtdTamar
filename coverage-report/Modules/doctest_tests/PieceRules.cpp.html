@@ -1,0 +1,175 @@
+﻿<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+	<head>
+        <meta charset="utf-8"/>
+	    <title>PieceRules.cpp</title>
+	    <link href="../../third-party/google-code-prettify/prettify-CppCoverage.css" type="text/css" rel="stylesheet" />
+	    <script type="text/javascript" src="../../third-party/google-code-prettify/prettify.js"></script>
+	</head>
+    <body onload="prettyPrint()">
+        <h4></h4>
+        <pre class="prettyprint lang-cpp linenums">
+#include "../include/PieceRules.hpp"
+
+#include &lt;cmath&gt;
+using namespace std;
+
+<span style = "background-color:#dfd">bool PieceRules::isPathClear(const Board&amp; board, const Position&amp; source, const Position&amp; destination) {
+    int fromRow = source.getRow();
+    int fromCol = source.getCol();
+    int toRow = destination.getRow();
+    int toCol = destination.getCol();
+    int rowStep = 0;
+    int colStep = 0;</span>
+
+<span style = "background-color:#dfd">    if (toRow &gt; fromRow) {
+        rowStep = 1;
+    } else if (toRow &lt; fromRow) {
+        rowStep = -1;</span>
+    }
+
+<span style = "background-color:#dfd">    if (toCol &gt; fromCol) {
+        colStep = 1;
+    } else if (toCol &lt; fromCol) {
+        colStep = -1;</span>
+    }
+
+<span style = "background-color:#dfd">    int currentRow = fromRow + rowStep;
+    int currentCol = fromCol + colStep;</span>
+
+<span style = "background-color:#dfd">    while (currentRow != toRow || currentCol != toCol) {
+        Position currentPosition(currentRow, currentCol);</span>
+
+<span style = "background-color:#dfd">        if (!board.isEmpty(currentPosition)) {
+            return false;</span>
+        }
+
+<span style = "background-color:#dfd">        currentRow += rowStep;
+        currentCol += colStep;
+    }</span>
+
+<span style = "background-color:#dfd">    return true;
+}</span>
+
+//×¦×¨××
+<span style = "background-color:#dfd">bool PieceRules::canMoveLikeRook(const Board&amp; board, const Position&amp; source, const Position&amp; destination) {
+    if (source == destination) {
+        return false;</span>
+    }
+
+<span style = "background-color:#dfd">    bool sameRow = source.getRow() == destination.getRow();
+    bool sameCol = source.getCol() == destination.getCol();</span>
+
+<span style = "background-color:#dfd">    if (!sameRow &amp;&amp; !sameCol) {
+        return false;</span>
+    }
+
+<span style = "background-color:#dfd">    return isPathClear(board, source, destination);
+}</span>
+
+//×¨×¥
+<span style = "background-color:#dfd">bool PieceRules::canMoveLikeBishop(const Board&amp; board, const Position&amp; source, const Position&amp; destination) {
+    if (source == destination) {
+        return false;</span>
+    }
+
+<span style = "background-color:#dfd">    int rowDiff = abs(destination.getRow() - source.getRow());
+    int colDiff = abs(destination.getCol() - source.getCol());</span>
+
+<span style = "background-color:#dfd">    if (rowDiff != colDiff) {
+        return false;</span>
+    }
+
+<span style = "background-color:#dfd">    return isPathClear(board, source, destination);
+}</span>
+
+//××××
+<span style = "background-color:#dfd">bool PieceRules::canMoveLikeQueen(const Board&amp; board, const Position&amp; source, const Position&amp; destination) {
+    return canMoveLikeRook(board, source, destination) || canMoveLikeBishop(board, source, destination);
+}</span>
+
+//×¤×¨×©
+<span style = "background-color:#dfd">bool PieceRules::canMoveLikeKnight(const Position&amp; source, const Position&amp; destination) {
+    if (source == destination) {
+        return false;</span>
+    }
+
+<span style = "background-color:#dfd">    int rowDiff = abs(destination.getRow() - source.getRow());
+    int colDiff = abs(destination.getCol() - source.getCol());</span>
+
+<span style = "background-color:#dfd">    return (rowDiff == 2 &amp;&amp; colDiff == 1) || (rowDiff == 1 &amp;&amp; colDiff == 2);
+}</span>
+
+//×××
+<span style = "background-color:#dfd">bool PieceRules::canMoveLikeKing(const Position&amp; source, const Position&amp; destination) {
+    if (source == destination) {
+        return false;</span>
+    }
+
+<span style = "background-color:#dfd">    int rowDiff = abs(destination.getRow() - source.getRow());
+    int colDiff = abs(destination.getCol() - source.getCol());</span>
+
+<span style = "background-color:#dfd">    return rowDiff &lt;= 1 &amp;&amp; colDiff &lt;= 1;
+}</span>
+
+//×¨×××
+<span style = "background-color:#dfd">bool PieceRules::canMoveLikePawn(const Board&amp; board, const Position&amp; source, const Position&amp; destination, PieceColor color) {
+    if (source == destination) {
+        return false;</span>
+    }
+
+<span style = "background-color:#dfd">    int direction = 0;
+    int startRow = 0;</span>
+
+<span style = "background-color:#dfd">    if (color == PieceColor::White) {
+        direction = -1;
+        startRow = board.getHeight() - 2;
+    } else {
+        direction = 1;
+        startRow = 1;</span>
+    }
+
+<span style = "background-color:#dfd">    int rowDiff = destination.getRow() - source.getRow();
+    int colDiff = destination.getCol() - source.getCol();</span>
+
+    // ×¦×¢× ××× ×§××××
+<span style = "background-color:#dfd">    if (rowDiff == direction &amp;&amp; colDiff == 0) {
+        return board.isEmpty(destination);</span>
+    }
+
+    // ×©× × ×¦×¢××× ×§×××× ×××©××¨× ×××ª×××ª××ª ××××
+<span style = "background-color:#dfd">    if (source.getRow() == startRow &amp;&amp; rowDiff == 2 * direction &amp;&amp; colDiff == 0) {</span>
+        
+<span style = "background-color:#dfd">        Position middleCell(source.getRow() + direction, source.getCol());</span>
+
+<span style = "background-color:#dfd">        return board.isEmpty(middleCell) &amp;&amp; board.isEmpty(destination);</span>
+    }
+
+    // ××××× ×××××¡×× â ×¨×§ ××× ××¦××¢ × ×××
+<span style = "background-color:#dfd">    if (rowDiff == direction &amp;&amp; abs(colDiff) == 1) {
+        shared_ptr&lt;Piece&gt; targetPiece = board.getPieceAt(destination);</span>
+
+<span style = "background-color:#dfd">        if (targetPiece == nullptr) {
+            return false;</span>
+        }
+
+<span style = "background-color:#dfd">        return targetPiece-&gt;getColor() != color;</span>
+    }
+
+<span style = "background-color:#dfd">    return false;
+}</span></pre>
+        <hr />
+        <table width="100%">
+            <thead>
+                <tr>
+                    <th align="center">
+                        <small>Generated by</small>
+                        <a href="https://github.com/OpenCppCoverage/OpenCppCoverage/releases">
+                            <strong>OpenCppCoverage (Version: 0.9.9.0)</strong>
+                        </a>
+                    </th>
+                </tr>
+            </thead>
+        </table>
+    </body>
+</html>

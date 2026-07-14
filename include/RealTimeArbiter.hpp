@@ -13,8 +13,12 @@ struct Motion {
     shared_ptr<Piece> piece;
     Position source;
     Position destination;
-    long long startTimeMs;
-    long long finishTimeMs;
+    Position currentCell;
+    int rowStep;
+    int colStep;
+    long long nextStepTimeMs;
+    bool finished;
+    int order;
 };
 
 struct Jump {
@@ -24,10 +28,14 @@ struct Jump {
     long long finishTimeMs;
 };
 
-struct ArrivalEvent {
+struct StepEvent {
     shared_ptr<Piece> piece;
     Position source;
-    Position destination;
+    Position from;
+    Position to;
+    bool reachedDestination;
+    long long eventTimeMs;
+    int order;
 };
 
 struct JumpLandingEvent {
@@ -36,7 +44,7 @@ struct JumpLandingEvent {
 };
 
 struct TimeEvents {
-    vector<ArrivalEvent> arrivals;
+    vector<StepEvent> steps;
     vector<JumpLandingEvent> jumpLandings;
 };
 
@@ -45,8 +53,8 @@ private:
     long long currentTimeMs;
     vector<Motion> activeMotions;
     vector<Jump> activeJumps;
-
-    long long calculateDurationMs(const Position& source, const Position& destination) const;
+    int nextMotionOrder;
+    int signValue(int value) const;
 
 public:
     RealTimeArbiter();
