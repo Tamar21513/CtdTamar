@@ -1,86 +1,36 @@
+#include "include/App/ConsoleApp.hpp"
+#include "include/App/VisualApp.hpp"
+
 #include <iostream>
 #include <string>
-#include <vector>
+#include <exception>
 
-#include "include/IO/BoardParser.hpp"
-#include "include/IO/BoardPrinter.hpp"
-#include "include/Core/Config.hpp"
-#include "include/Engine/GameEngine.hpp"
-#include "include/Control/Controller.hpp"
+int main(int argc, char* argv[]) {
+    try {
+        if (argc >= 2) {
+            std::string mode = argv[1];
 
-using namespace std;
+            if (mode == "console") {
+                ConsoleApp app;
+                app.run();
+                return 0;
+            }
 
-string trim(const string& str) {
-    size_t start = str.find_first_not_of(" \t\r\n");
-
-    if (start == string::npos) {
-        return "";
-    }
-
-    size_t end = str.find_last_not_of(" \t\r\n");
-
-    return str.substr(start, end - start + 1);
-}
-
-int main() {
-    vector<string> boardLines;
-    string line;
-    bool readingBoard = false;
-
-    while (getline(cin, line)) {
-        line = trim(line);
-
-        if (line == Config::BOARD_HEADER || line == "Board") {
-            readingBoard = true;
-            continue;
-        }
-
-        if (line == Config::COMMANDS_HEADER || line == "Commands") {
-            break;
-        }
-
-        if (readingBoard && !line.empty()) {
-            boardLines.push_back(line);
-        }
-    }
-
-    Board board = BoardParser::parse(boardLines);
-
-    GameEngine engine(board);
-    Controller controller(engine);
-
-    string command;
-
-    while (cin >> command) {
-        if (command == "click") {
-            int x;
-            int y;
-            cin >> x >> y;
-
-            controller.click(x, y);
-        }
-        else if (command == "jump") {
-            int x;
-            int y;
-            cin >> x >> y;
-                
-            controller.jump(x, y);
-        }
-        else if (command == "print") {
-            string what;
-            cin >> what;
-
-            if (what == "board") {
-                cout << BoardPrinter::print(engine.getBoard());
+            if (mode == "visual") {
+                VisualApp app;
+                app.run();
+                return 0;
             }
         }
-        else if (command == "wait") {
-            long long ms;
-            cin >> ms;
 
-            engine.wait(ms);
-        }
+        std::cout << "Usage:" << std::endl;
+        std::cout << "  main.exe console" << std::endl;
+        std::cout << "  main.exe visual" << std::endl;
+
+        return 0;
     }
-
-    return 0;
+    catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
 }

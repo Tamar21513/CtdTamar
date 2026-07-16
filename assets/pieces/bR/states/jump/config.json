@@ -1,0 +1,15 @@
+{
+  "piece": "rook",
+  "color": "black",
+  "piece_code": "bR",
+  "state": "jump",
+  "frame_count": 4,
+  "frames_per_sec": 12,
+  "is_loop": true,
+  "sprite_size": [
+    320,
+    320
+  ],
+  "transparent_background": true,
+  "anti_cut_version": "v6_full_shape"
+}

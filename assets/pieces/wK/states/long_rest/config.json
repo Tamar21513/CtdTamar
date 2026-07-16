@@ -1,0 +1,15 @@
+{
+  "piece": "king",
+  "color": "white",
+  "piece_code": "wK",
+  "state": "long_rest",
+  "frame_count": 4,
+  "frames_per_sec": 8,
+  "is_loop": true,
+  "sprite_size": [
+    320,
+    320
+  ],
+  "transparent_background": true,
+  "anti_cut_version": "v6_full_shape"
+}
