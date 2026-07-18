@@ -1,13 +1,18 @@
 #include "../../include/Engine/GameEngine.hpp"
+#include <algorithm>
 
-GameEngine::GameEngine(Board board) {
-    this->board = board;
-    this->gameOver = false;
-    this->currentTimeMs = 0;
-    this->nextMoveOrder = 0;
+GameEngine::GameEngine(
+    Board board
+) : board(std::move(board)) {
+    gameOver = false;
+
+    currentTimeMs = 0;
+    nextMoveOrder = 0;
 }
 
-int GameEngine::signValue(int value) const {
+int GameEngine::signValue(
+    int value
+) const {
     if (value > 0) {
         return 1;
     }
@@ -19,271 +24,642 @@ int GameEngine::signValue(int value) const {
     return 0;
 }
 
-MoveResult GameEngine::requestMove(const Position& source, const Position& destination) {
+MoveResult GameEngine::requestMove(
+    const Position& source,
+    const Position& destination
+) {
     if (gameOver) {
-        return {false, Reasons::GAME_OVER};
+        return {
+            false,
+            Reasons::GAME_OVER
+        };
     }
 
-    MoveValidation validation = ruleEngine.validateMove(board, source, destination);
-
-    if (!validation.isValid) {
-        return {false, validation.reason};
+    if (
+        !board.isInside(source) ||
+        !board.isInside(destination)
+    ) {
+        return {
+            false,
+            Reasons::OUTSIDE_BOARD
+        };
     }
 
-    shared_ptr<Piece> piece = board.getPieceAt(source);
+    std::shared_ptr<Piece> piece =
+        board.getPieceAt(source);
 
     if (piece == nullptr) {
-        return {false, Reasons::EMPTY_SOURCE};
+        return {
+            false,
+            Reasons::EMPTY_SOURCE
+        };
     }
 
-    if (piece->getState() != PieceState::Idle) {
-        return {false, Reasons::MOTION_IN_PROGRESS};
+    /*
+     * כלי שנע, קופץ או נאכל
+     * אינו יכול להתחיל תנועה.
+     */
+    if (
+        piece->getState() !=
+        PieceState::Idle
+    ) {
+        return {
+            false,
+            Reasons::MOTION_IN_PROGRESS
+        };
+    }
+
+    /*
+     * כלי בזמן cooldown אינו יכול לזוז.
+     */
+    if (
+        piece->isOnCooldown(
+            currentTimeMs
+        )
+    ) {
+        return {
+            false,
+            Reasons::MOTION_IN_PROGRESS
+        };
+    }
+
+    MoveValidation validation =
+        ruleEngine.validateMove(
+            board,
+            source,
+            destination
+        );
+
+    if (!validation.isValid) {
+        return {
+            false,
+            validation.reason
+        };
     }
 
     MovingPieceInfo movingPiece;
 
     movingPiece.piece = piece;
-    movingPiece.source = source;
-    movingPiece.destination = destination;
-    movingPiece.currentVirtualCell = source;
-    movingPiece.rowStep = signValue(destination.getRow() - source.getRow());
-    movingPiece.colStep = signValue(destination.getCol() - source.getCol());
-    movingPiece.nextStepTimeMs = currentTimeMs + Config::MOVE_TIME_PER_CELL_MS;
-    movingPiece.order = nextMoveOrder;
+
+    movingPiece.source =
+        source;
+
+    movingPiece.destination =
+        destination;
+
+    movingPiece.currentVirtualCell =
+        source;
+
+    movingPiece.rowStep =
+        signValue(
+            destination.getRow() -
+            source.getRow()
+        );
+
+    movingPiece.colStep =
+        signValue(
+            destination.getCol() -
+            source.getCol()
+        );
+
+    /*
+     * סוס אינו מתקדם תא־תא בקו ישר.
+     * הוא עובר ישירות לתא היעד.
+     */
+    movingPiece.directMove =
+        piece->getKind() ==
+        PieceKind::Knight;
+
+    movingPiece.nextStepTimeMs =
+        currentTimeMs +
+        Config::MOVE_TIME_PER_CELL_MS;
+
+    movingPiece.order =
+        nextMoveOrder;
 
     nextMoveOrder++;
 
-    movingPieces.push_back(movingPiece);
+    movingPieces.push_back(
+        movingPiece
+    );
 
-    piece->setState(PieceState::Moving);
+    piece->setState(
+        PieceState::Moving
+    );
 
-    return {true, Reasons::OK};
+    return {
+        true,
+        Reasons::OK
+    };
 }
 
-MoveResult GameEngine::requestJump(const Position& cell) {
+MoveResult GameEngine::requestJump(
+    const Position& cell
+) {
     if (gameOver) {
-        return {false, Reasons::GAME_OVER};
+        return {
+            false,
+            Reasons::GAME_OVER
+        };
     }
 
     if (!board.isInside(cell)) {
-        return {false, Reasons::OUTSIDE_BOARD};
+        return {
+            false,
+            Reasons::OUTSIDE_BOARD
+        };
     }
 
-    shared_ptr<Piece> piece = board.getPieceAt(cell);
+    std::shared_ptr<Piece> piece =
+        board.getPieceAt(cell);
 
     if (piece == nullptr) {
-        return {false, Reasons::EMPTY_SOURCE};
+        return {
+            false,
+            Reasons::EMPTY_SOURCE
+        };
     }
 
-    if (piece->getState() != PieceState::Idle) {
-        return {false, Reasons::CANNOT_JUMP};
+    if (
+        piece->getState() !=
+        PieceState::Idle
+    ) {
+        return {
+            false,
+            Reasons::CANNOT_JUMP
+        };
+    }
+
+    if (
+        piece->isOnCooldown(
+            currentTimeMs
+        )
+    ) {
+        return {
+            false,
+            Reasons::CANNOT_JUMP
+        };
     }
 
     JumpInfo jumpInfo;
 
-    jumpInfo.piece = piece;
-    jumpInfo.cell = cell;
-    jumpInfo.finishTimeMs = currentTimeMs + Config::JUMP_DURATION_MS;
+    jumpInfo.piece =
+        piece;
 
-    jumpingPieces.push_back(jumpInfo);
+    jumpInfo.cell =
+        cell;
 
-    piece->setState(PieceState::Airborne);
+    jumpInfo.finishTimeMs =
+        currentTimeMs +
+        Config::JUMP_DURATION_MS;
 
-    return {true, Reasons::JUMP_STARTED};
+    jumpingPieces.push_back(
+        jumpInfo
+    );
+
+    piece->setState(
+        PieceState::Airborne
+    );
+
+    return {
+        true,
+        Reasons::JUMP_STARTED
+    };
 }
 
-void GameEngine::wait(long long ms) {
+void GameEngine::wait(
+    long long ms
+) {
+    if (ms < 0) {
+        return;
+    }
+
     currentTimeMs += ms;
+
     processTimeEvents();
 }
 
 void GameEngine::processTimeEvents() {
     while (true) {
-        int movingIndex = findNextMovingPieceIndex();
-        int jumpIndex = findNextJumpIndex();
+        const int movingIndex =
+            findNextMovingPieceIndex();
 
-        bool hasMoveEvent = movingIndex != -1;
-        bool hasJumpEvent = jumpIndex != -1;
+        const int jumpIndex =
+            findNextJumpIndex();
 
-        if (!hasMoveEvent && !hasJumpEvent) {
+        const bool hasMoveEvent =
+            movingIndex != -1;
+
+        const bool hasJumpEvent =
+            jumpIndex != -1;
+
+        if (
+            !hasMoveEvent &&
+            !hasJumpEvent
+        ) {
             break;
         }
 
-        if (hasMoveEvent && !hasJumpEvent) {
-            processMovingPieceStep(movingIndex);
+        if (
+            hasMoveEvent &&
+            !hasJumpEvent
+        ) {
+            processMovingPieceStep(
+                movingIndex
+            );
+
             continue;
         }
 
-        if (!hasMoveEvent && hasJumpEvent) {
-            processJumpLanding(jumpIndex);
+        if (
+            !hasMoveEvent &&
+            hasJumpEvent
+        ) {
+            processJumpLanding(
+                jumpIndex
+            );
+
             continue;
         }
 
-        long long moveTime = movingPieces[movingIndex].nextStepTimeMs;
-        long long jumpTime = jumpingPieces[jumpIndex].finishTimeMs;
+        const long long moveTime =
+            movingPieces[
+                movingIndex
+            ].nextStepTimeMs;
+
+        const long long jumpTime =
+            jumpingPieces[
+                jumpIndex
+            ].finishTimeMs;
 
         if (moveTime <= jumpTime) {
-            processMovingPieceStep(movingIndex);
+            processMovingPieceStep(
+                movingIndex
+            );
         } else {
-            processJumpLanding(jumpIndex);
+            processJumpLanding(
+                jumpIndex
+            );
         }
     }
 }
 
-int GameEngine::findNextMovingPieceIndex() const {
+int GameEngine::findNextMovingPieceIndex()
+const {
     int bestIndex = -1;
 
-    for (size_t i = 0; i < movingPieces.size(); i++) {
-        if (movingPieces[i].piece == nullptr) {
+    for (
+        size_t i = 0;
+        i < movingPieces.size();
+        i++
+    ) {
+        const MovingPieceInfo& movement =
+            movingPieces[i];
+
+        if (movement.piece == nullptr) {
             continue;
         }
 
-        if (movingPieces[i].piece->getState() != PieceState::Moving) {
+        if (
+            movement.piece->getState() !=
+            PieceState::Moving
+        ) {
             continue;
         }
 
-        if (movingPieces[i].nextStepTimeMs > currentTimeMs) {
+        if (
+            movement.nextStepTimeMs >
+            currentTimeMs
+        ) {
             continue;
         }
 
         if (bestIndex == -1) {
-            bestIndex = static_cast<int>(i);
+            bestIndex =
+                static_cast<int>(i);
+
             continue;
         }
 
-        bool earlierTime = movingPieces[i].nextStepTimeMs < movingPieces[bestIndex].nextStepTimeMs;
-        bool sameTimeButEarlierOrder = movingPieces[i].nextStepTimeMs == movingPieces[bestIndex].nextStepTimeMs && movingPieces[i].order < movingPieces[bestIndex].order;
+        const MovingPieceInfo& currentBest =
+            movingPieces[bestIndex];
 
-        if (earlierTime || sameTimeButEarlierOrder) {
-            bestIndex = static_cast<int>(i);
+        const bool earlierTime =
+            movement.nextStepTimeMs <
+            currentBest.nextStepTimeMs;
+
+        const bool sameTimeEarlierOrder =
+            movement.nextStepTimeMs ==
+                currentBest.nextStepTimeMs &&
+            movement.order <
+                currentBest.order;
+
+        if (
+            earlierTime ||
+            sameTimeEarlierOrder
+        ) {
+            bestIndex =
+                static_cast<int>(i);
         }
     }
 
     return bestIndex;
 }
 
-int GameEngine::findNextJumpIndex() const {
+int GameEngine::findNextJumpIndex()
+const {
     int bestIndex = -1;
 
-    for (size_t i = 0; i < jumpingPieces.size(); i++) {
-        if (jumpingPieces[i].piece == nullptr) {
+    for (
+        size_t i = 0;
+        i < jumpingPieces.size();
+        i++
+    ) {
+        const JumpInfo& jump =
+            jumpingPieces[i];
+
+        if (jump.piece == nullptr) {
             continue;
         }
 
-        if (jumpingPieces[i].piece->getState() != PieceState::Airborne) {
+        if (
+            jump.piece->getState() !=
+            PieceState::Airborne
+        ) {
             continue;
         }
 
-        if (jumpingPieces[i].finishTimeMs > currentTimeMs) {
+        if (
+            jump.finishTimeMs >
+            currentTimeMs
+        ) {
             continue;
         }
 
         if (bestIndex == -1) {
-            bestIndex = static_cast<int>(i);
+            bestIndex =
+                static_cast<int>(i);
+
             continue;
         }
 
-        if (jumpingPieces[i].finishTimeMs < jumpingPieces[bestIndex].finishTimeMs) {
-            bestIndex = static_cast<int>(i);
+        if (
+            jump.finishTimeMs <
+            jumpingPieces[
+                bestIndex
+            ].finishTimeMs
+        ) {
+            bestIndex =
+                static_cast<int>(i);
         }
     }
 
     return bestIndex;
 }
 
-void GameEngine::processMovingPieceStep(int movingIndex) {
-    if (movingIndex < 0 || movingIndex >= static_cast<int>(movingPieces.size())) {
+void GameEngine::processMovingPieceStep(
+    int movingIndex
+) {
+    if (
+        movingIndex < 0 ||
+        movingIndex >=
+            static_cast<int>(
+                movingPieces.size()
+            )
+    ) {
         return;
     }
 
-    MovingPieceInfo& movingPiece = movingPieces[movingIndex];
+    /*
+     * מעתיקים כדי לא להחזיק reference
+     * לווקטור בזמן שמסירים ממנו איברים.
+     */
+    MovingPieceInfo movement =
+        movingPieces[movingIndex];
 
-    if (movingPiece.piece == nullptr) {
+    if (movement.piece == nullptr) {
         return;
     }
 
-    if (movingPiece.piece->getState() != PieceState::Moving) {
+    if (
+        movement.piece->getState() !=
+        PieceState::Moving
+    ) {
         return;
     }
 
-    Position nextCell(
-        movingPiece.currentVirtualCell.getRow() + movingPiece.rowStep,
-        movingPiece.currentVirtualCell.getCol() + movingPiece.colStep
-    );
+    Position nextCell =
+        movement.directMove
+        ? movement.destination
+        : Position(
+            movement
+                .currentVirtualCell
+                .getRow() +
+                movement.rowStep,
 
-    shared_ptr<Piece> targetPiece = findPieceAtRealOrVirtualCell(nextCell, movingPiece.piece);
+            movement
+                .currentVirtualCell
+                .getCol() +
+                movement.colStep
+        );
 
+    /*
+     * הגנת גבולות.
+     */
+    if (!board.isInside(nextCell)) {
+        stopMovingPieceAt(
+            movingPieces[movingIndex],
+            movement.currentVirtualCell
+        );
+
+        return;
+    }
+
+    std::shared_ptr<Piece> targetPiece =
+        findPieceAtRealOrVirtualCell(
+            nextCell,
+            movement.piece
+        );
+
+    /*
+     * התא הבא פנוי.
+     */
     if (targetPiece == nullptr) {
-        movingPiece.currentVirtualCell = nextCell;
+        movingPieces[movingIndex]
+            .currentVirtualCell =
+            nextCell;
 
-        if (nextCell == movingPiece.destination) {
-            stopMovingPieceAt(movingPiece, nextCell);
+        if (
+            nextCell ==
+            movement.destination
+        ) {
+            stopMovingPieceAt(
+                movingPieces[movingIndex],
+                nextCell
+            );
         } else {
-            movingPiece.nextStepTimeMs += Config::MOVE_TIME_PER_CELL_MS;
+            movingPieces[movingIndex]
+                .nextStepTimeMs +=
+                Config::MOVE_TIME_PER_CELL_MS;
         }
 
         return;
     }
 
-    if (targetPiece->getColor() == movingPiece.piece->getColor()) {
-        stopMovingPieceAt(movingPiece, movingPiece.currentVirtualCell);
+    /*
+     * כלי ידידותי חוסם.
+     */
+    if (
+        targetPiece->getColor() ==
+        movement.piece->getColor()
+    ) {
+        stopMovingPieceAt(
+            movingPieces[movingIndex],
+            movement.currentVirtualCell
+        );
+
         return;
     }
 
-    if (targetPiece->getState() == PieceState::Airborne) {
-        bool movingKingWasCaptured = movingPiece.piece->getKind() == PieceKind::King;
+    /*
+     * כלי קופץ אינו נאכל.
+     * התוקף הוא שנאכל בהתנגשות.
+     */
+    if (
+        targetPiece->getState() ==
+        PieceState::Airborne
+    ) {
+        const bool movingKingCaptured =
+            movement.piece->getKind() ==
+            PieceKind::King;
 
-        movingPiece.piece->setState(PieceState::Captured);
-        removePieceFromBoard(movingPiece.piece);
-        removeMovingPiece(movingPiece.piece);
+        movement.piece->setState(
+            PieceState::Captured
+        );
 
-        if (movingKingWasCaptured) {
+        removePieceFromBoard(
+            movement.piece
+        );
+
+        removeMovingPiece(
+            movement.piece
+        );
+
+        if (movingKingCaptured) {
             gameOver = true;
         }
 
         return;
     }
 
-    bool capturedKing = targetPiece->getKind() == PieceKind::King;
+    /*
+     * אכילת כלי יריב.
+     */
+    const bool capturedKing =
+        targetPiece->getKind() ==
+        PieceKind::King;
 
-    targetPiece->setState(PieceState::Captured);
-    removePieceFromBoard(targetPiece);
-    removeMovingPiece(targetPiece);
+    targetPiece->setState(
+        PieceState::Captured
+    );
 
-    stopMovingPieceAt(movingPiece, nextCell);
+    removePieceFromBoard(
+        targetPiece
+    );
+
+    removeMovingPiece(
+        targetPiece
+    );
+
+    const int updatedMovingIndex =
+        findMovingPieceIndex(
+            movement.piece
+        );
+
+    if (updatedMovingIndex != -1) {
+        stopMovingPieceAt(
+            movingPieces[
+                updatedMovingIndex
+            ],
+            nextCell
+        );
+    }
 
     if (capturedKing) {
         gameOver = true;
     }
 }
 
-void GameEngine::processJumpLanding(int jumpIndex) {
-    if (jumpIndex < 0 || jumpIndex >= static_cast<int>(jumpingPieces.size())) {
+void GameEngine::processJumpLanding(
+    int jumpIndex
+) {
+    if (
+        jumpIndex < 0 ||
+        jumpIndex >=
+            static_cast<int>(
+                jumpingPieces.size()
+            )
+    ) {
         return;
     }
 
-    JumpInfo jumpInfo = jumpingPieces[jumpIndex];
+    JumpInfo jumpInfo =
+        jumpingPieces[jumpIndex];
 
-    jumpingPieces.erase(jumpingPieces.begin() + jumpIndex);
+    jumpingPieces.erase(
+        jumpingPieces.begin() +
+        jumpIndex
+    );
 
     if (jumpInfo.piece == nullptr) {
         return;
     }
 
-    if (jumpInfo.piece->getState() != PieceState::Airborne) {
+    if (
+        jumpInfo.piece->getState() !=
+        PieceState::Airborne
+    ) {
         return;
     }
 
-    shared_ptr<Piece> pieceOnBoard = board.getPieceAt(jumpInfo.cell);
+    std::shared_ptr<Piece> pieceOnBoard =
+        board.getPieceAt(
+            jumpInfo.cell
+        );
 
-    if (pieceOnBoard == jumpInfo.piece) {
-        jumpInfo.piece->setState(PieceState::Idle);
+    if (
+        pieceOnBoard ==
+        jumpInfo.piece
+    ) {
+        jumpInfo.piece->setState(
+            PieceState::Idle
+        );
+
+        /*
+         * לאחר קפיצה:
+         * מנוחה קצרה.
+         */
+        jumpInfo.piece->startCooldown(
+            currentTimeMs,
+            Config::SHORT_COOLDOWN_MS
+        );
     }
 }
 
-shared_ptr<Piece> GameEngine::findPieceAtRealOrVirtualCell(const Position& cell, shared_ptr<Piece> exceptPiece) const {
-    for (size_t i = 0; i < movingPieces.size(); i++) {
-        shared_ptr<Piece> movingPiece = movingPieces[i].piece;
+std::shared_ptr<Piece>
+GameEngine::findPieceAtRealOrVirtualCell(
+    const Position& cell,
+    std::shared_ptr<Piece> exceptPiece
+) const {
+    /*
+     * קודם בודקים כלים שנמצאים בתנועה.
+     */
+    for (
+        const MovingPieceInfo& movement :
+        movingPieces
+    ) {
+        std::shared_ptr<Piece> movingPiece =
+            movement.piece;
 
         if (movingPiece == nullptr) {
             continue;
@@ -293,16 +669,26 @@ shared_ptr<Piece> GameEngine::findPieceAtRealOrVirtualCell(const Position& cell,
             continue;
         }
 
-        if (movingPiece->getState() != PieceState::Moving) {
+        if (
+            movingPiece->getState() !=
+            PieceState::Moving
+        ) {
             continue;
         }
 
-        if (movingPieces[i].currentVirtualCell == cell) {
+        if (
+            movement.currentVirtualCell ==
+            cell
+        ) {
             return movingPiece;
         }
     }
 
-    shared_ptr<Piece> boardPiece = board.getPieceAt(cell);
+    /*
+     * לאחר מכן בודקים את הלוח הלוגי.
+     */
+    std::shared_ptr<Piece> boardPiece =
+        board.getPieceAt(cell);
 
     if (boardPiece == nullptr) {
         return nullptr;
@@ -312,10 +698,27 @@ shared_ptr<Piece> GameEngine::findPieceAtRealOrVirtualCell(const Position& cell,
         return nullptr;
     }
 
-    if (boardPiece->getState() == PieceState::Moving) {
-        int movingIndex = findMovingPieceIndex(boardPiece);
+    /*
+     * כלי נע עדיין רשום בתא המקור הלוגי,
+     * אבל אם הוא כבר עבר וירטואלית מהתא,
+     * אין להתייחס אליו כאילו הוא עדיין שם.
+     */
+    if (
+        boardPiece->getState() ==
+        PieceState::Moving
+    ) {
+        const int movingIndex =
+            findMovingPieceIndex(
+                boardPiece
+            );
 
-        if (movingIndex != -1 && movingPieces[movingIndex].currentVirtualCell != cell) {
+        if (
+            movingIndex != -1 &&
+            movingPieces[
+                movingIndex
+            ].currentVirtualCell !=
+                cell
+        ) {
             return nullptr;
         }
     }
@@ -323,9 +726,18 @@ shared_ptr<Piece> GameEngine::findPieceAtRealOrVirtualCell(const Position& cell,
     return boardPiece;
 }
 
-int GameEngine::findMovingPieceIndex(shared_ptr<Piece> piece) const {
-    for (size_t i = 0; i < movingPieces.size(); i++) {
-        if (movingPieces[i].piece == piece) {
+int GameEngine::findMovingPieceIndex(
+    std::shared_ptr<Piece> piece
+) const {
+    for (
+        size_t i = 0;
+        i < movingPieces.size();
+        i++
+    ) {
+        if (
+            movingPieces[i].piece ==
+            piece
+        ) {
             return static_cast<int>(i);
         }
     }
@@ -333,24 +745,45 @@ int GameEngine::findMovingPieceIndex(shared_ptr<Piece> piece) const {
     return -1;
 }
 
-void GameEngine::removeMovingPiece(shared_ptr<Piece> piece) {
-    vector<MovingPieceInfo> remaining;
-
-    for (size_t i = 0; i < movingPieces.size(); i++) {
-        if (movingPieces[i].piece != piece) {
-            remaining.push_back(movingPieces[i]);
-        }
-    }
-
-    movingPieces = remaining;
+void GameEngine::removeMovingPiece(
+    std::shared_ptr<Piece> piece
+) {
+    movingPieces.erase(
+        std::remove_if(
+            movingPieces.begin(),
+            movingPieces.end(),
+            [piece](
+                const MovingPieceInfo& movement
+            ) {
+                return movement.piece == piece;
+            }
+        ),
+        movingPieces.end()
+    );
 }
 
-Position GameEngine::getLogicalCellOfPiece(shared_ptr<Piece> piece) const {
-    for (int row = 0; row < board.getHeight(); row++) {
-        for (int col = 0; col < board.getWidth(); col++) {
-            Position position(row, col);
+Position GameEngine::getLogicalCellOfPiece(
+    std::shared_ptr<Piece> piece
+) const {
+    for (
+        int row = 0;
+        row < board.getHeight();
+        row++
+    ) {
+        for (
+            int col = 0;
+            col < board.getWidth();
+            col++
+        ) {
+            Position position(
+                row,
+                col
+            );
 
-            if (board.getPieceAt(position) == piece) {
+            if (
+                board.getPieceAt(position) ==
+                piece
+            ) {
                 return position;
             }
         }
@@ -359,74 +792,209 @@ Position GameEngine::getLogicalCellOfPiece(shared_ptr<Piece> piece) const {
     return Position(-1, -1);
 }
 
-void GameEngine::removePieceFromBoard(shared_ptr<Piece> piece) {
-    Position logicalCell = getLogicalCellOfPiece(piece);
+void GameEngine::removePieceFromBoard(
+    std::shared_ptr<Piece> piece
+) {
+    const Position logicalCell =
+        getLogicalCellOfPiece(
+            piece
+        );
 
     if (board.isInside(logicalCell)) {
-        board.removePiece(logicalCell);
+        board.removePiece(
+            logicalCell
+        );
     }
 }
 
-void GameEngine::commitPieceToCell(shared_ptr<Piece> piece, const Position& source, const Position& destination) {
+void GameEngine::commitPieceToCell(
+    std::shared_ptr<Piece> piece,
+    const Position& source,
+    const Position& destination
+) {
     if (piece == nullptr) {
         return;
     }
 
-    if (!board.isInside(source) || !board.isInside(destination)) {
+    if (
+        !board.isInside(source) ||
+        !board.isInside(destination)
+    ) {
         return;
     }
-    shared_ptr<Piece> pieceAtSource = board.getPieceAt(source);
+
+    std::shared_ptr<Piece> pieceAtSource =
+        board.getPieceAt(source);
+
     if (pieceAtSource == piece) {
         board.removePiece(source);
     }
 
-    board.setPieceAt(destination, piece);
+    /*
+     * אם נשאר כלי אויב בתא היעד,
+     * מסירים אותו לפני ההצבה.
+     */
+    std::shared_ptr<Piece> pieceAtDestination =
+        board.getPieceAt(destination);
+
+    if (
+        pieceAtDestination != nullptr &&
+        pieceAtDestination != piece
+    ) {
+        pieceAtDestination->setState(
+            PieceState::Captured
+        );
+
+        board.removePiece(
+            destination
+        );
+    }
+
+    board.setPieceAt(
+        destination,
+        piece
+    );
 }
 
-void GameEngine::stopMovingPieceAt(MovingPieceInfo& movingPiece, const Position& finalCell) {
-    shared_ptr<Piece> piece = movingPiece.piece;
+void GameEngine::stopMovingPieceAt(
+    MovingPieceInfo& movement,
+    const Position& finalCell
+) {
+    std::shared_ptr<Piece> piece =
+        movement.piece;
 
     if (piece == nullptr) {
         return;
     }
 
-    Position source = movingPiece.source;
+    const Position source =
+        movement.source;
 
-    commitPieceToCell(piece, source, finalCell);
+    int rowDistance =
+        finalCell.getRow() -
+        source.getRow();
 
-    piece->setState(PieceState::Idle);
+    if (rowDistance < 0) {
+        rowDistance =
+            -rowDistance;
+    }
 
-    promotePawnIfNeeded(piece, finalCell);
+    int colDistance =
+        finalCell.getCol() -
+        source.getCol();
 
-    removeMovingPiece(piece);
+    if (colDistance < 0) {
+        colDistance =
+            -colDistance;
+    }
+
+    const int moveDistance =
+        rowDistance > colDistance
+        ? rowDistance
+        : colDistance;
+
+    commitPieceToCell(
+        piece,
+        source,
+        finalCell
+    );
+
+    /*
+     * הקידום חייב להתבצע לאחר
+     * שהכלי הונח בתא היעד.
+     */
+    promotePawnIfNeeded(
+        piece,
+        finalCell
+    );
+
+    piece->setState(
+        PieceState::Idle
+    );
+
+    const long long cooldownDuration =
+        moveDistance >= 4
+        ? Config::LONG_COOLDOWN_MS
+        : Config::SHORT_COOLDOWN_MS;
+
+    piece->startCooldown(
+        currentTimeMs,
+        cooldownDuration
+    );
+
+    removeMovingPiece(
+        piece
+    );
 }
 
-void GameEngine::promotePawnIfNeeded(shared_ptr<Piece> piece, const Position& cell) {
+void GameEngine::promotePawnIfNeeded(
+    std::shared_ptr<Piece> piece,
+    const Position& cell
+) {
     if (piece == nullptr) {
         return;
     }
 
-    if (piece->getKind() != PieceKind::Pawn) {
+    if (
+        piece->getKind() !=
+        PieceKind::Pawn
+    ) {
         return;
     }
 
-    bool whiteReachedLastRow =
-        piece->getColor() == PieceColor::White &&
+    /*
+     * לבן נע כלפי row קטן יותר.
+     * לכן שורת הקידום שלו היא 0.
+     */
+    const bool whiteReachedLastRow =
+        piece->getColor() ==
+            PieceColor::White &&
         cell.getRow() == 0;
 
-    bool blackReachedLastRow =
-        piece->getColor() == PieceColor::Black &&
-        cell.getRow() == board.getHeight() - 1;
+    /*
+     * שחור נע כלפי row גדול יותר.
+     * לכן שורת הקידום שלו היא
+     * השורה האחרונה בלוח.
+     */
+    const bool blackReachedLastRow =
+        piece->getColor() ==
+            PieceColor::Black &&
+        cell.getRow() ==
+            board.getHeight() - 1;
 
-    if (whiteReachedLastRow || blackReachedLastRow) {
-        piece->setKind(PieceKind::Queen);
+    if (
+        whiteReachedLastRow ||
+        blackReachedLastRow
+    ) {
+        piece->setKind(
+            PieceKind::Queen
+        );
     }
 }
 
-const Board& GameEngine::getBoard() const {
+long long GameEngine::getCurrentTimeMs()
+const {
+    return currentTimeMs;
+}
+
+const std::vector<MovingPieceInfo>&
+GameEngine::getMovingPieces()
+const {
+    return movingPieces;
+}
+
+const std::vector<JumpInfo>&
+GameEngine::getJumpingPieces()
+const {
+    return jumpingPieces;
+}
+
+const Board& GameEngine::getBoard()
+const {
     return board;
 }
 
-bool GameEngine::isGameOver() const {
+bool GameEngine::isGameOver()
+const {
     return gameOver;
 }

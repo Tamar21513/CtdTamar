@@ -2,14 +2,15 @@
 
 #include <string>
 
-#include "VisualState.hpp"
-#include "AnimationPlayer.hpp"
 #include "AnimationLibrary.hpp"
+#include "AnimationPlayer.hpp"
 #include "Renderer.hpp"
+#include "VisualState.hpp"
 
 class AnimatedPiece {
 private:
     std::string pieceCode;
+
     VisualState state;
 
     int row;
@@ -21,6 +22,7 @@ private:
     double cooldownRatio;
 
     AnimationPlayer animationPlayer;
+
     const AnimationLibrary* animationLibrary;
 
     void loadAnimation();
@@ -38,16 +40,33 @@ public:
     );
 
     void update(long long deltaMs);
+
     void setState(VisualState newState);
-    void setPixelPosition(double newPixelX, double newPixelY);
-    void setCooldownRatio(double newCooldownRatio);
-    void setBoardCell(int newRow, int newCol);
+
+    void setPixelPosition(
+        double newPixelX,
+        double newPixelY
+    );
+
+    void setCooldownRatio(
+        double newCooldownRatio
+    );
+
+    void setBoardCell(
+        int newRow,
+        int newCol
+    );
+
+    void setPieceCode(
+        const std::string& newPieceCode
+    );
 
     int getRow() const;
     int getCol() const;
-    
-    VisualPiece toVisualPiece() const;
 
     std::string getPieceCode() const;
+
     VisualState getState() const;
+
+    VisualPiece toVisualPiece() const;
 };

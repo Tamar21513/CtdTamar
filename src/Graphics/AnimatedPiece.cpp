@@ -1,6 +1,7 @@
 #include "../../include/Graphics/AnimatedPiece.hpp"
 
 #include <iostream>
+#include <vector>
 
 AnimatedPiece::AnimatedPiece(
     const std::string& pieceCode,
@@ -33,29 +34,58 @@ void AnimatedPiece::loadAnimation() {
         return;
     }
 
-    std::vector<std::string> frames = animationLibrary->getFramePaths(pieceCode, state);
+    std::vector<std::string> frames =
+        animationLibrary->getFramePaths(
+            pieceCode,
+            state
+        );
 
-    if (frames.empty() && state != VisualState::Idle) {
-        std::cout << "No frames for state. Falling back to idle. Piece: " << pieceCode << std::endl;
-        frames = animationLibrary->getFramePaths(pieceCode, VisualState::Idle);
+    if (
+        frames.empty() &&
+        state != VisualState::Idle
+    ) {
+        std::cout
+            << "No frames for state. "
+            << "Falling back to idle. Piece: "
+            << pieceCode
+            << std::endl;
+
+        frames =
+            animationLibrary->getFramePaths(
+                pieceCode,
+                VisualState::Idle
+            );
     }
 
     if (frames.empty()) {
-        std::cout << "No frames found for piece: " << pieceCode << std::endl;
+        std::cout
+            << "No frames found for piece: "
+            << pieceCode
+            << std::endl;
+
         return;
     }
 
-    int fps = animationLibrary->getFramesPerSecond(state);
-    bool loop = animationLibrary->isLoop(state);
+    int fps =
+        animationLibrary->getFramesPerSecond(state);
 
-    animationPlayer.setFrames(frames, fps, loop);
+    bool loop =
+        animationLibrary->isLoop(state);
+
+    animationPlayer.setFrames(
+        frames,
+        fps,
+        loop
+    );
 }
 
 void AnimatedPiece::update(long long deltaMs) {
     animationPlayer.update(deltaMs);
 }
 
-void AnimatedPiece::setState(VisualState newState) {
+void AnimatedPiece::setState(
+    VisualState newState
+) {
     if (state == newState) {
         return;
     }
@@ -65,12 +95,17 @@ void AnimatedPiece::setState(VisualState newState) {
     loadAnimation();
 }
 
-void AnimatedPiece::setPixelPosition(double newPixelX, double newPixelY) {
+void AnimatedPiece::setPixelPosition(
+    double newPixelX,
+    double newPixelY
+) {
     pixelX = newPixelX;
     pixelY = newPixelY;
 }
 
-void AnimatedPiece::setCooldownRatio(double newCooldownRatio) {
+void AnimatedPiece::setCooldownRatio(
+    double newCooldownRatio
+) {
     if (newCooldownRatio < 0.0) {
         newCooldownRatio = 0.0;
     }
@@ -82,27 +117,10 @@ void AnimatedPiece::setCooldownRatio(double newCooldownRatio) {
     cooldownRatio = newCooldownRatio;
 }
 
-VisualPiece AnimatedPiece::toVisualPiece() const {
-    VisualPiece piece;
-
-    piece.pieceCode = pieceCode;
-    piece.state = state;
-
-    piece.row = row;
-    piece.col = col;
-
-    piece.pixelX = pixelX;
-    piece.pixelY = pixelY;
-
-    piece.cooldownRatio = cooldownRatio;
-
-    piece.imagePath = animationPlayer.getCurrentFramePath();
-
-    piece.opacity = 1.0;
-
-    return piece;
-}
-void AnimatedPiece::setBoardCell(int newRow, int newCol) {
+void AnimatedPiece::setBoardCell(
+    int newRow,
+    int newCol
+) {
     row = newRow;
     col = newCol;
 }
@@ -121,4 +139,42 @@ std::string AnimatedPiece::getPieceCode() const {
 
 VisualState AnimatedPiece::getState() const {
     return state;
+}
+
+void AnimatedPiece::setPieceCode(
+    const std::string& newPieceCode
+) {
+    if (pieceCode == newPieceCode) {
+        return;
+    }
+
+    pieceCode = newPieceCode;
+
+    /*
+     * לאחר שינוי מרגלי למלכה,
+     * טוענים את האנימציות של המלכה.
+     */
+    loadAnimation();
+}
+
+VisualPiece AnimatedPiece::toVisualPiece() const {
+    VisualPiece piece;
+
+    piece.pieceCode = pieceCode;
+    piece.state = state;
+
+    piece.row = row;
+    piece.col = col;
+
+    piece.pixelX = pixelX;
+    piece.pixelY = pixelY;
+
+    piece.cooldownRatio = cooldownRatio;
+
+    piece.imagePath =
+        animationPlayer.getCurrentFramePath();
+
+    piece.opacity = 1.0;
+
+    return piece;
 }
