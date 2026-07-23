@@ -7,14 +7,20 @@
 #include "Renderer.hpp"
 #include "VisualStateMachine.hpp"
 
-#include "../Engine/GameEngine.hpp"
+#include "../Messaging/GameStateSnapshot.hpp"
 
 class VisualSnapshotBuilder {
 private:
     struct CachedPiece {
         int pieceId;
-
         AnimatedPiece animatedPiece;
+    };
+
+    struct VisualPlacement {
+        int row;
+        int col;
+        double pixelX;
+        double pixelY;
     };
 
     int boardStartX;
@@ -34,34 +40,62 @@ private:
     std::vector<CachedPiece>
         cachedPieces;
 
-    double cellCenterX(
-        int col
-    ) const;
-
-    double cellCenterY(
-        int row
-    ) const;
+    double cellCenterX(int col) const;
+    double cellCenterY(int row) const;
 
     CachedPiece* findCachedPiece(
         int pieceId
     );
 
-    const MovingPieceInfo*
-    findMovement(
-        const GameEngine& engine,
+    const MotionSnapshot* findMovement(
+        const GameStateSnapshot& snapshot,
         int pieceId
     ) const;
 
-    const JumpInfo*
-    findJump(
-        const GameEngine& engine,
+    const JumpSnapshot* findJump(
+        const GameStateSnapshot& snapshot,
         int pieceId
     ) const;
 
     void removeMissingPieces(
-        const std::vector<int>&
-            visiblePieceIds
+        const std::vector<int>& visiblePieceIds
     );
+
+    VisualPlacement calculatePlacement(
+        const GameStateSnapshot& snapshot,
+        const PieceSnapshot& piece
+    ) const;
+
+    void applyMovement(
+        VisualPlacement& placement,
+        const MotionSnapshot& movement,
+        long long currentTimeMs
+    ) const;
+
+    void applyJump(
+        VisualPlacement& placement,
+        const JumpSnapshot& jump,
+        long long currentTimeMs
+    ) const;
+
+    CachedPiece& getOrCreateCachedPiece(
+        const PieceSnapshot& piece,
+        VisualState visualState,
+        const VisualPlacement& placement,
+        double cooldownRatio
+    );
+
+    void updateCachedPiece(
+        CachedPiece& cached,
+        const PieceSnapshot& piece,
+        VisualState visualState,
+        const VisualPlacement& placement,
+        double cooldownRatio,
+        long long deltaMs
+    );
+
+    std::vector<VisualPiece>
+    createSnapshot() const;
 
 public:
     VisualSnapshotBuilder(
@@ -75,7 +109,7 @@ public:
     );
 
     std::vector<VisualPiece> build(
-        const GameEngine& engine,
+        const GameStateSnapshot& snapshot,
         long long deltaMs
     );
 };

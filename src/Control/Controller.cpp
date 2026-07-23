@@ -1,45 +1,37 @@
 #include "../../include/Control/Controller.hpp"
 #include "../../include/Core/Config.hpp"
 
-Controller::Controller(
-    GameEngine& engine
-) : engine(engine) {
-    selectedCell = nullopt;
+// Creates a controller with default board geometry.
+Controller::Controller(GameEngine& engine)
+    : engine(engine),
+      messageBus(),
+      messageHandler(engine, messageBus),
+      nextSequence(1),
+      selectedCell(nullopt),
+      boardStartX(0),
+      boardStartY(0),
+      cellSizeX(Config::CELL_SIZE),
+      cellSizeY(Config::CELL_SIZE) {}
 
-    boardStartX = 0;
-    boardStartY = 0;
-
-    cellSizeX =
-        Config::CELL_SIZE;
-
-    cellSizeY =
-        Config::CELL_SIZE;
-}
-
+// Creates a controller with explicit board geometry.
 Controller::Controller(
     GameEngine& engine,
     int boardStartX,
     int boardStartY,
     int cellSizeX,
     int cellSizeY
-) : engine(engine) {
-    selectedCell = nullopt;
+) : engine(engine),
+    messageBus(),
+    messageHandler(engine, messageBus),
+    nextSequence(1),
+    selectedCell(nullopt),
+    boardStartX(boardStartX),
+    boardStartY(boardStartY),
+    cellSizeX(cellSizeX),
+    cellSizeY(cellSizeY) {}
 
-    this->boardStartX =
-        boardStartX;
-
-    this->boardStartY =
-        boardStartY;
-
-    this->cellSizeX =
-        cellSizeX;
-
-    this->cellSizeY =
-        cellSizeY;
-}
-
-optional<Position>
-Controller::mapClickToCell(
+// Maps a window pixel to a board cell.
+optional<Position> Controller::mapClickToCell(
     int x,
     int y
 ) const {
@@ -54,118 +46,145 @@ Controller::mapClickToCell(
     );
 }
 
-ControllerResult Controller::click(
-    int x,
-    int y
-) {
-    optional<Position> clickedCell =
-        mapClickToCell(
-            x,
-            y
+// Checks whether a piece can currently be selected.
+bool Controller::isPieceAvailable(
+    const shared_ptr<Piece>& piece
+) const {
+    return piece != nullptr &&
+        piece->getState() == PieceState::Idle &&
+        !piece->isOnCooldown(
+            engine.getCurrentTimeMs()
         );
+}
 
-    if (!clickedCell.has_value()) {
-        if (selectedCell.has_value()) {
-            selectedCell = nullopt;
+// Selects the piece clicked before any selection exists.
+ControllerResult Controller::selectFirstPiece(
+    const Position& clickedPosition
+) {
+    const shared_ptr<Piece> piece =
+        engine.getBoard().getPieceAt(clickedPosition);
 
-            return {
-                true,
-                Reasons::CLICK_OUTSIDE
-            };
-        }
+    if (piece == nullptr) {
+        return {
+            false,
+            Reasons::EMPTY_CLICK
+        };
+    }
+
+    if (!isPieceAvailable(piece)) {
+        return {
+            false,
+            Reasons::MOTION_IN_PROGRESS
+        };
+    }
+
+    selectedCell = clickedPosition;
+
+    return {
+        true,
+        Reasons::SELECTED
+    };
+}
+
+// Replaces the selection with an available friendly piece.
+ControllerResult Controller::selectFriendlyPiece(
+    const Position& clickedPosition
+) {
+    const shared_ptr<Piece> piece =
+        engine.getBoard().getPieceAt(clickedPosition);
+
+    if (!isPieceAvailable(piece)) {
+        selectedCell = nullopt;
 
         return {
             false,
-            Reasons::CLICK_OUTSIDE
+            Reasons::MOTION_IN_PROGRESS
         };
     }
 
-    Position clickedPosition =
-        clickedCell.value();
+    selectedCell = clickedPosition;
 
-    /*
-     * לחיצה ראשונה.
-     */
-    if (!selectedCell.has_value()) {
-        shared_ptr<Piece> clickedPiece =
-            engine.getBoard().getPieceAt(
-                clickedPosition
-            );
+    return {
+        true,
+        Reasons::SELECTED
+    };
+}
 
-        if (clickedPiece == nullptr) {
-            return {
-                false,
-                Reasons::EMPTY_CLICK
-            };
-        }
+// Sends a move request and clears the current selection.
+ControllerResult Controller::requestSelectedMove(
+    const Position& source,
+    const Position& destination
+) {
+    selectedCell = nullopt;
 
-        /*
-         * כלי שנע או קופץ אינו ניתן לבחירה.
-         */
-        if (
-            clickedPiece->getState() !=
-            PieceState::Idle
-        ) {
-            return {
-                false,
-                Reasons::MOTION_IN_PROGRESS
-            };
-        }
+    return sendRequest(
+        MessageType::MoveRequest,
+        source,
+        destination
+    );
+}
 
-        /*
-         * כלי במנוחה אינו ניתן לבחירה.
-         *
-         * לכן גם העותק השקוף לא יופיע
-         * ולא ינוע אחרי העכבר.
-         */
-        if (
-            clickedPiece->isOnCooldown(
-                engine.getCurrentTimeMs()
-            )
-        ) {
-            return {
-                false,
-                Reasons::MOTION_IN_PROGRESS
-            };
-        }
+// Sends a request through the message bus and returns the server-side response.
+ControllerResult Controller::sendRequest(
+    MessageType type,
+    const Position& source,
+    const Position& destination
+) {
+    Message request;
 
-        selectedCell =
-            clickedPosition;
+    request.type = type;
+    request.sequence = nextSequence++;
+    request.source = source;
+    request.destination = destination;
+    request.createdAtMs =
+        engine.getCurrentTimeMs();
 
+    messageBus.sendToEngine(request);
+
+    messageHandler.processNextMessage();
+
+    if (!messageBus.hasMessageForClient()) {
         return {
-            true,
-            Reasons::SELECTED
+            false,
+            "missing_engine_response"
         };
     }
 
-    Position source =
+    const Message response =
+        messageBus.receiveForClient();
+
+    if (response.sequence != request.sequence) {
+        return {
+            false,
+            "unexpected_response_sequence"
+        };
+    }
+
+    return {
+        response.accepted,
+        response.reason
+    };
+}
+
+// Handles a click while a source cell is selected.
+ControllerResult Controller::handleSelectedCell(
+    const Position& clickedPosition
+) {
+    const Position source =
         selectedCell.value();
 
-    /*
-     * לחיצה שנייה על אותו תא:
-     * שולחים בקשת קפיצה למנוע.
-     */
     if (clickedPosition == source) {
         selectedCell = nullopt;
 
-        MoveResult jumpResult =
-            engine.requestJump(source);
-
-        return {
-            jumpResult.isAccepted,
-            jumpResult.reason
-        };
-    }
-
-    shared_ptr<Piece> selectedPiece =
-        engine.getBoard().getPieceAt(
+        return sendRequest(
+            MessageType::JumpRequest,
+            source,
             source
         );
+    }
 
-    shared_ptr<Piece> clickedPiece =
-        engine.getBoard().getPieceAt(
-            clickedPosition
-        );
+    const shared_ptr<Piece> selectedPiece =
+        engine.getBoard().getPieceAt(source);
 
     if (selectedPiece == nullptr) {
         selectedCell = nullopt;
@@ -176,72 +195,65 @@ ControllerResult Controller::click(
         };
     }
 
-    /*
-     * לחיצה על כלי ידידותי אחר
-     * מחליפה בחירה רק אם הוא זמין.
-     */
+    const shared_ptr<Piece> clickedPiece =
+        engine.getBoard().getPieceAt(
+            clickedPosition
+        );
+
     if (
         clickedPiece != nullptr &&
         selectedPiece->getColor() ==
             clickedPiece->getColor()
     ) {
-        if (
-            clickedPiece->getState() !=
-            PieceState::Idle
-        ) {
-            selectedCell = nullopt;
+        return selectFriendlyPiece(
+            clickedPosition
+        );
+    }
 
-            return {
-                false,
-                Reasons::MOTION_IN_PROGRESS
-            };
-        }
+    return requestSelectedMove(
+        source,
+        clickedPosition
+    );
+}
 
-        if (
-            clickedPiece->isOnCooldown(
-                engine.getCurrentTimeMs()
-            )
-        ) {
-            selectedCell = nullopt;
+// Handles one regular click.
+ControllerResult Controller::click(
+    int x,
+    int y
+) {
+    const optional<Position> clickedCell =
+        mapClickToCell(x, y);
 
-            return {
-                false,
-                Reasons::MOTION_IN_PROGRESS
-            };
-        }
+    if (!clickedCell.has_value()) {
+        const bool selectionWasCleared =
+            selectedCell.has_value();
 
-        selectedCell =
-            clickedPosition;
+        selectedCell = nullopt;
 
         return {
-            true,
-            Reasons::SELECTED
+            selectionWasCleared,
+            Reasons::CLICK_OUTSIDE
         };
     }
 
-    selectedCell = nullopt;
-
-    MoveResult moveResult =
-        engine.requestMove(
-            source,
-            clickedPosition
+    if (!selectedCell.has_value()) {
+        return selectFirstPiece(
+            clickedCell.value()
         );
+    }
 
-    return {
-        moveResult.isAccepted,
-        moveResult.reason
-    };
+    return handleSelectedCell(
+        clickedCell.value()
+    );
 }
 
+// Handles one explicit jump command.
 ControllerResult Controller::jump(
     int x,
     int y
 ) {
-    optional<Position> clickedCell =
-        mapClickToCell(
-            x,
-            y
-        );
+    const optional<Position> clickedCell =
+        mapClickToCell(x, y);
 
     selectedCell = nullopt;
 
@@ -252,21 +264,19 @@ ControllerResult Controller::jump(
         };
     }
 
-    MoveResult result =
-        engine.requestJump(
-            clickedCell.value()
-        );
-
-    return {
-        result.isAccepted,
-        result.reason
-    };
+    return sendRequest(
+        MessageType::JumpRequest,
+        clickedCell.value(),
+        clickedCell.value()
+    );
 }
 
+// Reports whether a source cell is selected.
 bool Controller::hasSelection() const {
     return selectedCell.has_value();
 }
 
+// Returns the selected source cell.
 optional<Position>
 Controller::getSelectedCell() const {
     return selectedCell;

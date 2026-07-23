@@ -4,6 +4,7 @@
 #include <sstream>
 #include <iostream>
 
+// Implements isAllowedToken.
 bool BoardParser::isAllowedToken(const string& token) {
     if (token == Config::EMPTY_CELL) {
         return true;
@@ -21,6 +22,7 @@ bool BoardParser::isAllowedToken(const string& token) {
     return validColor && validKind;
 }
 
+// Implements splitLineToTokens.
 vector<string> BoardParser::splitLineToTokens(const string& line) {
     vector<string> tokens;
     string token;
@@ -33,6 +35,7 @@ vector<string> BoardParser::splitLineToTokens(const string& line) {
     return tokens;
 }
 
+// Implements parse.
 Board BoardParser::parse(const vector<string>& boardLines) {
     vector<vector<string>> tokensByRow;
 

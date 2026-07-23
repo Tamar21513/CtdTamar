@@ -3,6 +3,7 @@
 #include <cmath>
 using namespace std;
 
+// Checks whether every intermediate path cell is empty.
 bool PieceRules::isPathClear(const Board& board, const Position& source, const Position& destination) {
     int fromRow = source.getRow();
     int fromCol = source.getCol();
@@ -40,7 +41,7 @@ bool PieceRules::isPathClear(const Board& board, const Position& source, const P
     return true;
 }
 
-//צריח
+// Validates rook-shaped movement.
 bool PieceRules::canMoveLikeRook(const Board& board, const Position& source, const Position& destination) {
     if (source == destination) {
         return false;
@@ -56,7 +57,7 @@ bool PieceRules::canMoveLikeRook(const Board& board, const Position& source, con
     return isPathClear(board, source, destination);
 }
 
-//רץ
+// Validates bishop-shaped movement.
 bool PieceRules::canMoveLikeBishop(const Board& board, const Position& source, const Position& destination) {
     if (source == destination) {
         return false;
@@ -72,12 +73,12 @@ bool PieceRules::canMoveLikeBishop(const Board& board, const Position& source, c
     return isPathClear(board, source, destination);
 }
 
-//מלכה
+// Validates queen-shaped movement.
 bool PieceRules::canMoveLikeQueen(const Board& board, const Position& source, const Position& destination) {
     return canMoveLikeRook(board, source, destination) || canMoveLikeBishop(board, source, destination);
 }
 
-//פרש
+// Validates knight-shaped movement.
 bool PieceRules::canMoveLikeKnight(const Position& source, const Position& destination) {
     if (source == destination) {
         return false;
@@ -89,7 +90,7 @@ bool PieceRules::canMoveLikeKnight(const Position& source, const Position& desti
     return (rowDiff == 2 && colDiff == 1) || (rowDiff == 1 && colDiff == 2);
 }
 
-//מלך
+// Validates king-shaped movement.
 bool PieceRules::canMoveLikeKing(const Position& source, const Position& destination) {
     if (source == destination) {
         return false;
@@ -101,7 +102,7 @@ bool PieceRules::canMoveLikeKing(const Position& source, const Position& destina
     return rowDiff <= 1 && colDiff <= 1;
 }
 
-//רגלי
+// Validates pawn movement and capture rules.
 bool PieceRules::canMoveLikePawn(const Board& board, const Position& source, const Position& destination, PieceColor color) {
     if (source == destination) {
         return false;
@@ -121,12 +122,12 @@ bool PieceRules::canMoveLikePawn(const Board& board, const Position& source, con
     int rowDiff = destination.getRow() - source.getRow();
     int colDiff = destination.getCol() - source.getCol();
 
-    // צעד אחד קדימה
+    // Accept a single forward step into an empty cell.
     if (rowDiff == direction && colDiff == 0) {
         return board.isEmpty(destination);
     }
 
-    // שני צעדים קדימה מהשורה ההתחלתית בלבד
+    // Accept a clear double step from the starting rank.
     if (source.getRow() == startRow && rowDiff == 2 * direction && colDiff == 0) {
         
         Position middleCell(source.getRow() + direction, source.getCol());
@@ -134,7 +135,7 @@ bool PieceRules::canMoveLikePawn(const Board& board, const Position& source, con
         return board.isEmpty(middleCell) && board.isEmpty(destination);
     }
 
-    // אכילה באלכסון — רק כלי בצבע נגדי
+    // Accept a diagonal step only when capturing an opponent.
     if (rowDiff == direction && abs(colDiff) == 1) {
         shared_ptr<Piece> targetPiece = board.getPieceAt(destination);
 

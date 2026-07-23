@@ -1,6 +1,7 @@
 #include "../../include/IO/BoardMapper.hpp"
 #include "../../include/Core/Config.hpp"
 
+// Maps a pixel using the default board geometry.
 optional<Position> BoardMapper::pixelToCell(
     int x,
     int y,
@@ -17,6 +18,7 @@ optional<Position> BoardMapper::pixelToCell(
     );
 }
 
+// Maps a pixel using explicit board geometry.
 optional<Position> BoardMapper::pixelToCell(
     int x,
     int y,
@@ -30,16 +32,11 @@ optional<Position> BoardMapper::pixelToCell(
         return nullopt;
     }
 
-    /*
-     * ממירים את מיקום העכבר ממיקום בחלון
-     * למיקום יחסי לתחילת תאי הלוח.
-     */
+    // Convert the pointer to coordinates relative to the board cells.
     int relativeX = x - boardStartX;
     int relativeY = y - boardStartY;
 
-    /*
-     * לחיצה בשוליים שמסביב ללוח.
-     */
+    // Reject clicks in the margins before the board.
     if (relativeX < 0 || relativeY < 0) {
         return nullopt;
     }
@@ -50,10 +47,7 @@ optional<Position> BoardMapper::pixelToCell(
     int boardPixelHeight =
         board.getHeight() * cellSizeY;
 
-    /*
-     * לחיצה אחרי הקצה הימני או התחתון
-     * של תאי הלוח.
-     */
+    // Reject clicks beyond the last row or column.
     if (
         relativeX >= boardPixelWidth ||
         relativeY >= boardPixelHeight

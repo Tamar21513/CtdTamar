@@ -1,5 +1,6 @@
 #include "../../include/Graphics/VisualStateMachine.hpp"
 
+// Implements chooseState.
 VisualState VisualStateMachine::chooseState(PieceState pieceState, long long remainingCooldownMs, long long totalCooldownMs) const {
     if (pieceState == PieceState::Captured) {
         return VisualState::Captured;

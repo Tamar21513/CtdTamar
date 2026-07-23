@@ -4,6 +4,7 @@
 
 const long long VISUAL_MOVE_TIME_PER_CELL_MS = 1000;
 
+// Implements createVisualMotion.
 VisualMotion createVisualMotion(int fromRow, int fromCol, int toRow, int toCol) {
     VisualMotion motion;
 
@@ -29,6 +30,7 @@ VisualMotion createVisualMotion(int fromRow, int fromCol, int toRow, int toCol) 
     return motion;
 }
 
+// Implements getMotionProgress.
 double getMotionProgress(const VisualMotion& motion) {
     if (!motion.active) {
         return 1.0;

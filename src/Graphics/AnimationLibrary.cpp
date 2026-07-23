@@ -1,103 +1,95 @@
 #include "../../include/Graphics/AnimationLibrary.hpp"
-
 #include <filesystem>
 #include <algorithm>
 #include <iostream>
 #include <cctype>
+#include <fstream>
+#include <regex>
+#include <sstream>
 
 namespace fs = std::filesystem;
 
+// Implements extractNumberFromFileName.
 static int extractNumberFromFileName(const std::string& fileName) {
     std::string digits;
-
     for (char ch : fileName) {
-        if (std::isdigit(static_cast<unsigned char>(ch))) {
-            digits += ch;
-        }
+        if (std::isdigit(static_cast<unsigned char>(ch))) digits += ch;
     }
-
-    if (digits.empty()) {
-        return -1;
-    }
-
-    return std::stoi(digits);
+    return digits.empty() ? -1 : std::stoi(digits);
 }
 
+// Implements readInt.
+static int readInt(const std::string& text, const std::string& key, int fallback) {
+    std::regex pattern("\\\"" + key + "\\\"\\s*:\\s*([0-9]+)");
+    std::smatch match;
+    return std::regex_search(text, match, pattern) ? std::stoi(match[1].str()) : fallback;
+}
+
+// Implements readBool.
+static bool readBool(const std::string& text, const std::string& key, bool fallback) {
+    std::regex pattern("\\\"" + key + "\\\"\\s*:\\s*(true|false)");
+    std::smatch match;
+    if (!std::regex_search(text, match, pattern)) return fallback;
+    return match[1].str() == "true";
+}
+
+// Implements getFramePaths.
 std::vector<std::string> AnimationLibrary::getFramePaths(const std::string& pieceCode, VisualState state) const {
     std::vector<std::string> framePaths;
-
     std::string folderPath = buildSpritesFolderPath(pieceCode, state);
-
-    if (!fs::exists(folderPath)) {
-        std::cout << "Animation folder does not exist: " << folderPath << std::endl;
-        return framePaths;
-    }
+    if (!fs::exists(folderPath)) return framePaths;
 
     for (const auto& entry : fs::directory_iterator(folderPath)) {
-        if (entry.path().extension() == ".png") {
-            framePaths.push_back(entry.path().string());
-        }
+        if (entry.path().extension() == ".png") framePaths.push_back(entry.path().string());
     }
 
     std::sort(framePaths.begin(), framePaths.end(), [](const std::string& a, const std::string& b) {
-        fs::path pathA(a);
-        fs::path pathB(b);
-
-        int numberA = extractNumberFromFileName(pathA.stem().string());
-        int numberB = extractNumberFromFileName(pathB.stem().string());
-
-        if (numberA != -1 && numberB != -1) {
-            return numberA < numberB;
-        }
-
+        int numberA = extractNumberFromFileName(fs::path(a).stem().string());
+        int numberB = extractNumberFromFileName(fs::path(b).stem().string());
+        if (numberA != -1 && numberB != -1) return numberA < numberB;
         return a < b;
     });
-
-    std::cout << "Loaded " << framePaths.size() << " frames from: " << folderPath << std::endl;
-
     return framePaths;
 }
 
-int AnimationLibrary::getFramesPerSecond(VisualState state) const {
-    if (state == VisualState::Idle) {
-        return 4;
-    }
+// Implements getConfig.
+AnimationConfig AnimationLibrary::getConfig(const std::string& pieceCode, VisualState state) const {
+    AnimationConfig config;
+    std::ifstream input(buildStateFolderPath(pieceCode, state) + "\\config.json");
+    if (!input) return config;
 
-    if (state == VisualState::Move) {
-        return 8;
-    }
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+    std::string text = buffer.str();
+    config.frameCount = readInt(text, "frame_count", config.frameCount);
+    config.framesPerSecond = readInt(text, "frames_per_sec", config.framesPerSecond);
+    config.isLoop = readBool(text, "is_loop", config.isLoop);
 
-    if (state == VisualState::Jump) {
-        return 10;
+    std::regex spritePattern("\\\"sprite_size\\\"\\s*:\\s*\\[\\s*([0-9]+)\\s*,\\s*([0-9]+)");
+    std::smatch match;
+    if (std::regex_search(text, match, spritePattern)) {
+        config.spriteWidth = std::stoi(match[1].str());
+        config.spriteHeight = std::stoi(match[2].str());
     }
-
-    if (state == VisualState::ShortRest) {
-        return 5;
-    }
-
-    if (state == VisualState::LongRest) {
-        return 4;
-    }
-
-    return 6;
+    return config;
 }
 
-bool AnimationLibrary::isLoop(VisualState state) const {
-    if (state == VisualState::Jump) {
-        return false;
-    }
-
-    if (state == VisualState::Captured) {
-        return false;
-    }
-
-    return true;
+// Implements getFramesPerSecond.
+int AnimationLibrary::getFramesPerSecond(const std::string& pieceCode, VisualState state) const {
+    return getConfig(pieceCode, state).framesPerSecond;
 }
 
+// Implements isLoop.
+bool AnimationLibrary::isLoop(const std::string& pieceCode, VisualState state) const {
+    return getConfig(pieceCode, state).isLoop;
+}
+
+// Implements buildStateFolderPath.
+std::string AnimationLibrary::buildStateFolderPath(const std::string& pieceCode, VisualState state) const {
+    return "assets\\pieces\\" + pieceCode + "\\states\\" + visualStateToFolderName(state);
+}
+
+// Implements buildSpritesFolderPath.
 std::string AnimationLibrary::buildSpritesFolderPath(const std::string& pieceCode, VisualState state) const {
-    return "assets\\pieces\\" +
-           pieceCode +
-           "\\states\\" +
-           visualStateToFolderName(state) +
-           "\\sprites";
+    return buildStateFolderPath(pieceCode, state) + "\\sprites";
 }

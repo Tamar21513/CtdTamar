@@ -1,5 +1,6 @@
 #include "../../include/IO/BoardPrinter.hpp"
 
+// Implements print.
 string BoardPrinter::print(const Board& board) {
     string result = "";
 

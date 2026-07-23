@@ -1,132 +1,163 @@
 #include "../../include/Realtime/RealTimeArbiter.hpp"
-#include "../../include/Core/Config.hpp"
-
-#include <cmath>
 #include <algorithm>
 
-using namespace std;
+// Implements RealTimeArbiter.
+RealTimeArbiter::RealTimeArbiter()
+    : currentTimeMs(0), nextMotionOrder(0) {}
 
-RealTimeArbiter::RealTimeArbiter() {
-    currentTimeMs = 0;
-    nextMotionOrder = 0;
-}
-
+// Implements signValue.
 int RealTimeArbiter::signValue(int value) const {
-    if (value > 0) {
-        return 1;
-    }
-
-    if (value < 0) {
-        return -1;
-    }
-
-    return 0;
+    return value > 0 ? 1 : (value < 0 ? -1 : 0);
 }
 
+// Implements getCurrentTimeMs.
+long long RealTimeArbiter::getCurrentTimeMs() const {
+    return currentTimeMs;
+}
+
+// Implements hasActiveMotion.
 bool RealTimeArbiter::hasActiveMotion() const {
     return !activeMotions.empty();
 }
 
-void RealTimeArbiter::startMotion(shared_ptr<Piece> piece, const Position& source, const Position& destination) {
-    Motion motion;
+// Implements startMotion.
+void RealTimeArbiter::startMotion(
+    shared_ptr<Piece> piece,
+    const Position& source,
+    const Position& destination,
+    long long stepDurationMs,
+    bool forceDirectMove
+) {
+    if (piece == nullptr) return;
+    if (stepDurationMs <= 0) stepDurationMs = 1;
 
+    Motion motion;
     motion.piece = piece;
     motion.source = source;
     motion.destination = destination;
     motion.currentCell = source;
     motion.rowStep = signValue(destination.getRow() - source.getRow());
     motion.colStep = signValue(destination.getCol() - source.getCol());
-    motion.nextStepTimeMs = currentTimeMs + Config::MOVE_TIME_PER_CELL_MS;
-    motion.finished = false;
-    motion.order = nextMotionOrder;
+    motion.directMove = forceDirectMove || piece->getKind() == PieceKind::Knight;
+    motion.stepDurationMs = stepDurationMs;
+    motion.nextStepTimeMs = currentTimeMs + stepDurationMs;
+    motion.order = nextMotionOrder++;
 
-    if (piece != nullptr) {
-        piece->setState(PieceState::Moving);
-    }
-
+    piece->setState(PieceState::Moving);
     activeMotions.push_back(motion);
 }
 
-void RealTimeArbiter::startJump(shared_ptr<Piece> piece, const Position& cell) {
-    Jump jump;
+// Implements startJump.
+void RealTimeArbiter::startJump(
+    shared_ptr<Piece> piece,
+    const Position& cell,
+    long long jumpDurationMs
+) {
+    if (piece == nullptr) return;
+    if (jumpDurationMs <= 0) jumpDurationMs = 1;
 
+    Jump jump;
     jump.piece = piece;
     jump.cell = cell;
-    jump.startTimeMs = currentTimeMs;
-    jump.finishTimeMs = currentTimeMs + Config::JUMP_DURATION_MS;
-
-    if (piece != nullptr) {
-        piece->setState(PieceState::Airborne);
-    }
-
+    jump.finishTimeMs = currentTimeMs + jumpDurationMs;
+    piece->setState(PieceState::Airborne);
     activeJumps.push_back(jump);
 }
 
+// Implements advanceTime.
 TimeEvents RealTimeArbiter::advanceTime(long long ms) {
+    TimeEvents events;
+    if (ms < 0) return events;
     currentTimeMs += ms;
 
-    TimeEvents events;
-    vector<Motion> stillMoving;
+    for (Motion& motion : activeMotions) {
+        if (motion.piece == nullptr || motion.piece->getState() != PieceState::Moving) continue;
 
-    for (size_t i = 0; i < activeMotions.size(); i++) {
-        Motion motion = activeMotions[i];
+        while (currentTimeMs >= motion.nextStepTimeMs) {
+            Position nextCell = motion.directMove
+                ? motion.destination
+                : Position(
+                    motion.currentCell.getRow() + motion.rowStep,
+                    motion.currentCell.getCol() + motion.colStep
+                );
 
-        if (motion.piece == nullptr || motion.piece->getState() != PieceState::Moving) {
-            continue;
-        }
-
-        while (!motion.finished && currentTimeMs >= motion.nextStepTimeMs) {
-            Position nextCell(motion.currentCell.getRow() + motion.rowStep, motion.currentCell.getCol() + motion.colStep);
             StepEvent event;
             event.piece = motion.piece;
             event.source = motion.source;
             event.from = motion.currentCell;
             event.to = nextCell;
-            event.reachedDestination = (nextCell == motion.destination);
+            event.reachedDestination = nextCell == motion.destination;
             event.eventTimeMs = motion.nextStepTimeMs;
             event.order = motion.order;
-
             events.steps.push_back(event);
 
-            motion.currentCell = nextCell;
-            motion.nextStepTimeMs += Config::MOVE_TIME_PER_CELL_MS;
-
-            if (event.reachedDestination) {
-                motion.finished = true;
-            }
-        }
-
-        if (!motion.finished && motion.piece->getState() == PieceState::Moving) {
-            stillMoving.push_back(motion);
+            // GameEngine decides whether this step is accepted. Stop emitting
+            // more steps in the same advance until it applies the event.
+            break;
         }
     }
 
-    activeMotions = stillMoving;
-
     sort(events.steps.begin(), events.steps.end(), [](const StepEvent& a, const StepEvent& b) {
-        if (a.eventTimeMs != b.eventTimeMs) {
-            return a.eventTimeMs < b.eventTimeMs;
-        }
-
+        if (a.eventTimeMs != b.eventTimeMs) return a.eventTimeMs < b.eventTimeMs;
         return a.order < b.order;
     });
 
     vector<Jump> stillJumping;
-
-    for (size_t i = 0; i < activeJumps.size(); i++) {
-        Jump jump = activeJumps[i];
-
-        if (currentTimeMs >= jump.finishTimeMs) {
+    for (const Jump& jump : activeJumps) {
+        if (jump.piece != nullptr && currentTimeMs >= jump.finishTimeMs) {
             JumpLandingEvent event;
             event.piece = jump.piece;
             event.cell = jump.cell;
+            event.eventTimeMs = jump.finishTimeMs;
             events.jumpLandings.push_back(event);
         } else {
             stillJumping.push_back(jump);
         }
     }
+    activeJumps.swap(stillJumping);
 
-    activeJumps = stillJumping;
+    activeMotions.erase(
+        remove_if(activeMotions.begin(), activeMotions.end(),
+            [](const Motion& motion) {
+                return motion.piece == nullptr || motion.piece->getState() != PieceState::Moving;
+            }),
+        activeMotions.end()
+    );
 
     return events;
+}
+
+// Implements getActiveMotions.
+const vector<Motion>& RealTimeArbiter::getActiveMotions() const {
+    return activeMotions;
+}
+
+// Implements getActiveJumps.
+const vector<Jump>& RealTimeArbiter::getActiveJumps() const {
+    return activeJumps;
+}
+
+// Implements updateMotionCell.
+void RealTimeArbiter::updateMotionCell(shared_ptr<Piece> piece, const Position& cell) {
+    for (Motion& motion : activeMotions) {
+        if (motion.piece == piece) {
+            motion.currentCell = cell;
+            motion.nextStepTimeMs += motion.stepDurationMs;
+            return;
+        }
+    }
+}
+
+// Implements finishMotion.
+void RealTimeArbiter::finishMotion(shared_ptr<Piece> piece) {
+    cancelMotion(piece);
+}
+
+// Implements cancelMotion.
+void RealTimeArbiter::cancelMotion(shared_ptr<Piece> piece) {
+    activeMotions.erase(
+        remove_if(activeMotions.begin(), activeMotions.end(),
+            [piece](const Motion& motion) { return motion.piece == piece; }),
+        activeMotions.end()
+    );
 }

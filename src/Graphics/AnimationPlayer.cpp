@@ -1,5 +1,6 @@
 #include "../../include/Graphics/AnimationPlayer.hpp"
 
+// Implements AnimationPlayer.
 AnimationPlayer::AnimationPlayer() {
     currentFrameIndex = 0;
     framesPerSecond = 8;
@@ -7,6 +8,7 @@ AnimationPlayer::AnimationPlayer() {
     elapsedMs = 0;
 }
 
+// Implements setFrames.
 void AnimationPlayer::setFrames(const std::vector<std::string>& newFramePaths, int fps, bool shouldLoop) {
     framePaths = newFramePaths;
     framesPerSecond = fps;
@@ -15,6 +17,7 @@ void AnimationPlayer::setFrames(const std::vector<std::string>& newFramePaths, i
     elapsedMs = 0;
 }
 
+// Implements update.
 void AnimationPlayer::update(long long deltaMs) {
     if (framePaths.empty()) {
         return;
@@ -42,6 +45,7 @@ void AnimationPlayer::update(long long deltaMs) {
     }
 }
 
+// Implements getCurrentFramePath.
 std::string AnimationPlayer::getCurrentFramePath() const {
     if (framePaths.empty()) {
         return "";
@@ -50,6 +54,7 @@ std::string AnimationPlayer::getCurrentFramePath() const {
     return framePaths[currentFrameIndex];
 }
 
+// Implements isEmpty.
 bool AnimationPlayer::isEmpty() const {
     return framePaths.empty();
 }

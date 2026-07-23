@@ -70,13 +70,105 @@ TEST_SUITE("GameEngine basic movement") {
         CHECK(second.reason == Reasons::MOTION_IN_PROGRESS);
     }
 
-    TEST_CASE("piece can move again immediately after arrival") {
+    TEST_CASE("cooldown equals travelled cells times 1000ms") {
         GameEngine engine(parseBoard({"wR . ."}));
         engine.requestMove(Position(0,0), Position(0,2));
         engine.wait(2000);
+        CHECK_FALSE(engine.requestMove(Position(0,2), Position(0,0)).isAccepted);
+        engine.wait(1999);
+        CHECK_FALSE(engine.requestMove(Position(0,2), Position(0,0)).isAccepted);
+        engine.wait(1);
         CHECK(engine.requestMove(Position(0,2), Position(0,0)).isAccepted);
         engine.wait(2000);
         requireToken(engine.getBoard(), 0, 0, "wR");
+    }
+}
+
+TEST_SUITE("Castling") {
+    TEST_CASE("white king-side castling moves king and rook together") {
+        GameEngine engine(parseBoard({
+            ". . . . bK . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            "wR . . . wK . . wR"
+        }));
+        CHECK(engine.requestMove(Position(7,4), Position(7,6)).isAccepted);
+        engine.wait(1999);
+        requireToken(engine.getBoard(), 7, 4, "wK");
+        requireToken(engine.getBoard(), 7, 7, "wR");
+        engine.wait(1);
+        requireToken(engine.getBoard(), 7, 6, "wK");
+        requireToken(engine.getBoard(), 7, 5, "wR");
+        REQUIRE(engine.getWhiteMoveHistory().size() == 1);
+        CHECK(engine.getWhiteMoveHistory()[0].notation == "O-O");
+    }
+
+    TEST_CASE("black queen-side castling moves king and rook together") {
+        GameEngine engine(parseBoard({
+            "bR . . . bK . . bR",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . wK . . ."
+        }));
+        CHECK(engine.requestMove(Position(0,4), Position(0,2)).isAccepted);
+        engine.wait(2000);
+        requireToken(engine.getBoard(), 0, 2, "bK");
+        requireToken(engine.getBoard(), 0, 3, "bR");
+        REQUIRE(engine.getBlackMoveHistory().size() == 1);
+        CHECK(engine.getBlackMoveHistory()[0].notation == "O-O-O");
+    }
+
+    TEST_CASE("castling is rejected when path is blocked") {
+        GameEngine engine(parseBoard({
+            ". . . . bK . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            "wR . . . wK wB . wR"
+        }));
+        CHECK_FALSE(engine.requestMove(Position(7,4), Position(7,6)).isAccepted);
+    }
+
+    TEST_CASE("castling is rejected after king moved") {
+        GameEngine engine(parseBoard({
+            ". . . . bK . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . wK . . .",
+            "wR . . . . . . wR"
+        }));
+        CHECK(engine.requestMove(Position(6,4), Position(7,4)).isAccepted);
+        engine.wait(1000);
+        engine.wait(1000);
+        CHECK_FALSE(engine.requestMove(Position(7,4), Position(7,6)).isAccepted);
+    }
+
+    TEST_CASE("castling through an attacked square is rejected") {
+        GameEngine engine(parseBoard({
+            ". . . . bK bR . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            ". . . . . . . .",
+            "wR . . . wK . . wR"
+        }));
+        CHECK_FALSE(engine.requestMove(Position(7,4), Position(7,6)).isAccepted);
     }
 }
 
@@ -366,21 +458,21 @@ TEST_SUITE("Extra coverage time ordering") {
         );
 
         /*
-            זמן נוכחי בסיום ההמתנה: 1500 ms
+            Current time after waiting: 1500 ms
 
-            תנועת הצריח הראשונה:
+            First rook movement:
             1000 ms
 
-            נחיתת הפרש:
+            Knight landing:
             1500 ms
 
-            תנועת הצריח הבאה:
+            Next rook movement:
             2000 ms
 
-            לכן סדר האירועים צריך להיות:
-            1. צעד צריח
-            2. נחיתת פרש
-            3. עדיין לא הצעד הבא של הצריח
+            Expected event order:
+            1. Rook step
+            2. Knight landing
+            3. The next rook step has not occurred yet
         */
         engine.wait(1000);
 
@@ -416,10 +508,10 @@ TEST_SUITE("Extra coverage time ordering") {
         REQUIRE(secondRook != nullptr);
 
         /*
-            הצריח השחור מתחיל לנוע מ-(0,0) אל (0,2).
+            The black rook starts moving from (0,0) to (0,2).
 
-            לאחר הצעד הראשון המיקום הווירטואלי שלו הוא (0,1),
-            אבל בלוח הפיזי הוא עדיין שמור ב-(0,0).
+            After the first step its virtual position is (0,1),
+            but the logical board still stores it at (0,0).
         */
         CHECK(
             engine.requestMove(
@@ -429,7 +521,7 @@ TEST_SUITE("Extra coverage time ordering") {
         );
 
         /*
-            הצריח הלבן נע אל התא הישן של הצריח השחור.
+            The white rook moves toward the black rook's old cell.
         */
         CHECK(
             engine.requestMove(
@@ -441,8 +533,8 @@ TEST_SUITE("Extra coverage time ordering") {
         engine.wait(1000);
 
         /*
-            הצריח השחור כבר נמצא וירטואלית ב-(0,1),
-            ולכן התא הישן (0,0) צריך להיחשב פנוי.
+            The black rook is already virtually at (0,1),
+            so its old cell (0,0) should be considered empty.
         */
         CHECK(firstRook->getState() == PieceState::Moving);
         CHECK(secondRook->getState() == PieceState::Idle);

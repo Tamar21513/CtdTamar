@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 
+// Implements AnimatedPiece.
 AnimatedPiece::AnimatedPiece(
     const std::string& pieceCode,
     VisualState state,
@@ -29,6 +30,7 @@ AnimatedPiece::AnimatedPiece(
     loadAnimation();
 }
 
+// Implements loadAnimation.
 void AnimatedPiece::loadAnimation() {
     if (animationLibrary == nullptr) {
         return;
@@ -67,10 +69,10 @@ void AnimatedPiece::loadAnimation() {
     }
 
     int fps =
-        animationLibrary->getFramesPerSecond(state);
+        animationLibrary->getFramesPerSecond(pieceCode, state);
 
     bool loop =
-        animationLibrary->isLoop(state);
+        animationLibrary->isLoop(pieceCode, state);
 
     animationPlayer.setFrames(
         frames,
@@ -79,10 +81,12 @@ void AnimatedPiece::loadAnimation() {
     );
 }
 
+// Implements update.
 void AnimatedPiece::update(long long deltaMs) {
     animationPlayer.update(deltaMs);
 }
 
+// Implements setState.
 void AnimatedPiece::setState(
     VisualState newState
 ) {
@@ -95,6 +99,7 @@ void AnimatedPiece::setState(
     loadAnimation();
 }
 
+// Implements setPixelPosition.
 void AnimatedPiece::setPixelPosition(
     double newPixelX,
     double newPixelY
@@ -103,6 +108,7 @@ void AnimatedPiece::setPixelPosition(
     pixelY = newPixelY;
 }
 
+// Implements setCooldownRatio.
 void AnimatedPiece::setCooldownRatio(
     double newCooldownRatio
 ) {
@@ -117,6 +123,7 @@ void AnimatedPiece::setCooldownRatio(
     cooldownRatio = newCooldownRatio;
 }
 
+// Implements setBoardCell.
 void AnimatedPiece::setBoardCell(
     int newRow,
     int newCol
@@ -125,22 +132,27 @@ void AnimatedPiece::setBoardCell(
     col = newCol;
 }
 
+// Implements getRow.
 int AnimatedPiece::getRow() const {
     return row;
 }
 
+// Implements getCol.
 int AnimatedPiece::getCol() const {
     return col;
 }
 
+// Implements getPieceCode.
 std::string AnimatedPiece::getPieceCode() const {
     return pieceCode;
 }
 
+// Implements getState.
 VisualState AnimatedPiece::getState() const {
     return state;
 }
 
+// Implements setPieceCode.
 void AnimatedPiece::setPieceCode(
     const std::string& newPieceCode
 ) {
@@ -150,13 +162,11 @@ void AnimatedPiece::setPieceCode(
 
     pieceCode = newPieceCode;
 
-    /*
-     * לאחר שינוי מרגלי למלכה,
-     * טוענים את האנימציות של המלכה.
-     */
+    // Reload animations after a pawn changes into a queen.
     loadAnimation();
 }
 
+// Implements toVisualPiece.
 VisualPiece AnimatedPiece::toVisualPiece() const {
     VisualPiece piece;
 

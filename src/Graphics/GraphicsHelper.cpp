@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+// Implements readImage.
 cv::Mat GraphicsHelper::readImage(const std::string& path) {
     cv::Mat image = cv::imread(path, cv::IMREAD_UNCHANGED);
 
@@ -12,6 +13,7 @@ cv::Mat GraphicsHelper::readImage(const std::string& path) {
     return image;
 }
 
+// Implements drawTransparent.
 void GraphicsHelper::drawTransparent(cv::Mat& target, const cv::Mat& source, int x, int y) {
     if (target.empty() || source.empty()) {
         throw std::runtime_error("Images must be loaded before drawing.");
@@ -61,12 +63,14 @@ void GraphicsHelper::drawTransparent(cv::Mat& target, const cv::Mat& source, int
     }
 }
 
+// Implements show.
 void GraphicsHelper::show(const std::string& windowName, const cv::Mat& image) {
     cv::imshow(windowName, image);
     cv::waitKey(0);
     cv::destroyAllWindows();
 }
 
+// Implements drawTransparentWithOpacity.
 void GraphicsHelper::drawTransparentWithOpacity(cv::Mat& background, const cv::Mat& foreground, int x, int y, double opacity) {
     if (background.empty() || foreground.empty()) {
         return;

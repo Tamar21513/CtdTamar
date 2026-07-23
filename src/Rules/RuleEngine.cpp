@@ -1,6 +1,7 @@
 #include "../../include/Rules/RuleEngine.hpp"
 #include "../../include/Rules/PieceRules.hpp"
 
+// Implements isLegalByPieceKind.
 bool RuleEngine::isLegalByPieceKind(const Board& board, const Position& source, const Position& destination) const {
     shared_ptr<Piece> piece = board.getPieceAt(source);
 
@@ -37,6 +38,7 @@ bool RuleEngine::isLegalByPieceKind(const Board& board, const Position& source, 
     return false;
 }
 
+// Implements validateMove.
 MoveValidation RuleEngine::validateMove(const Board& board, const Position& source, const Position& destination) const {
     if (!board.isInside(source) || !board.isInside(destination)) {
         return {false, Reasons::OUTSIDE_BOARD};

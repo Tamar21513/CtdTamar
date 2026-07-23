@@ -1,9 +1,8 @@
 #ifndef REAL_TIME_ARBITER_HPP
 #define REAL_TIME_ARBITER_HPP
 
-#include <vector>
 #include <memory>
-
+#include <vector>
 #include "../Core/Position.hpp"
 #include "../Core/Piece.hpp"
 
@@ -14,18 +13,18 @@ struct Motion {
     Position source;
     Position destination;
     Position currentCell;
-    int rowStep;
-    int colStep;
-    long long nextStepTimeMs;
-    bool finished;
-    int order;
+    int rowStep = 0;
+    int colStep = 0;
+    bool directMove = false;
+    long long stepDurationMs = 1000;
+    long long nextStepTimeMs = 0;
+    int order = 0;
 };
 
 struct Jump {
     shared_ptr<Piece> piece;
     Position cell;
-    long long startTimeMs;
-    long long finishTimeMs;
+    long long finishTimeMs = 0;
 };
 
 struct StepEvent {
@@ -33,14 +32,15 @@ struct StepEvent {
     Position source;
     Position from;
     Position to;
-    bool reachedDestination;
-    long long eventTimeMs;
-    int order;
+    bool reachedDestination = false;
+    long long eventTimeMs = 0;
+    int order = 0;
 };
 
 struct JumpLandingEvent {
     shared_ptr<Piece> piece;
     Position cell;
+    long long eventTimeMs = 0;
 };
 
 struct TimeEvents {
@@ -58,10 +58,32 @@ private:
 
 public:
     RealTimeArbiter();
+
+    long long getCurrentTimeMs() const;
     bool hasActiveMotion() const;
-    void startMotion(shared_ptr<Piece> piece, const Position& source, const Position& destination);
-    void startJump(shared_ptr<Piece> piece, const Position& cell);
+
+    void startMotion(
+        shared_ptr<Piece> piece,
+        const Position& source,
+        const Position& destination,
+        long long stepDurationMs = 1000,
+        bool forceDirectMove = false
+    );
+
+    void startJump(
+        shared_ptr<Piece> piece,
+        const Position& cell,
+        long long jumpDurationMs = 1000
+    );
+
     TimeEvents advanceTime(long long ms);
+
+    const vector<Motion>& getActiveMotions() const;
+    const vector<Jump>& getActiveJumps() const;
+
+    void updateMotionCell(shared_ptr<Piece> piece, const Position& cell);
+    void finishMotion(shared_ptr<Piece> piece);
+    void cancelMotion(shared_ptr<Piece> piece);
 };
 
 #endif

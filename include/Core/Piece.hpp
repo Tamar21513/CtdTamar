@@ -37,6 +37,7 @@ private:
     long long cooldownStartedAtMs;
     long long cooldownUntilMs;
     long long totalCooldownMs;
+    bool hasMoved;
 
 public:
     Piece(
@@ -53,6 +54,8 @@ public:
 
     void setState(PieceState newState);
     void setKind(PieceKind newKind);
+    bool getHasMoved() const;
+    void markAsMoved();
 
     void startCooldown(
         long long currentTimeMs,

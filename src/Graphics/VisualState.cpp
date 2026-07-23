@@ -1,5 +1,6 @@
 #include "../../include/Graphics/VisualState.hpp"
 
+// Implements visualStateToFolderName.
 string visualStateToFolderName(VisualState state) {
     if (state == VisualState::Idle) {
         return "idle";

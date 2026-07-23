@@ -2,10 +2,12 @@
 #include <iostream>
 #include <stdexcept>
 
+// Implements Img.
 Img::Img() {
     // Constructor - img is automatically initialized as empty
 }
 
+// Implements read.
 Img& Img::read(const std::string& path,
                const std::pair<int, int>& size,
                bool keep_aspect,
@@ -35,6 +37,7 @@ Img& Img::read(const std::string& path,
     return *this;
 }
 
+// Implements draw_on.
 void Img::draw_on(Img& other_img, int x, int y) {
     if (img.empty() || other_img.img.empty()) {
         throw std::runtime_error("Both images must be loaded before drawing.");
@@ -78,6 +81,7 @@ void Img::draw_on(Img& other_img, int x, int y) {
     }
 }
 
+// Implements put_text.
 void Img::put_text(const std::string& txt, int x, int y, double font_size,
                    const cv::Scalar& color, int thickness) {
     if (img.empty()) {
@@ -89,6 +93,7 @@ void Img::put_text(const std::string& txt, int x, int y, double font_size,
                 color, thickness, cv::LINE_AA);
 }
 
+// Implements show.
 void Img::show() {
     if (img.empty()) {
         throw std::runtime_error("Image not loaded.");

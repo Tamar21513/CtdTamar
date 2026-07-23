@@ -33,16 +33,23 @@ TEST_SUITE("RealTimeArbiter") {
         CHECK(events.steps[0].eventTimeMs == 1000);
     }
 
-    TEST_CASE("large advance emits all steps in chronological order") {
+    TEST_CASE("arbiter emits one step and waits for engine confirmation") {
         RealTimeArbiter arbiter;
         auto piece = makePiece(1, PieceColor::White, PieceKind::Bishop);
         arbiter.startMotion(piece, Position(0,0), Position(3,3));
         TimeEvents events = arbiter.advanceTime(3000);
-        REQUIRE(events.steps.size() == 3);
+        REQUIRE(events.steps.size() == 1);
         CHECK(events.steps[0].to == Position(1,1));
-        CHECK(events.steps[1].to == Position(2,2));
-        CHECK(events.steps[2].to == Position(3,3));
-        CHECK(events.steps[2].reachedDestination);
+        arbiter.updateMotionCell(piece, Position(1,1));
+        events = arbiter.advanceTime(0);
+        REQUIRE(events.steps.size() == 1);
+        CHECK(events.steps[0].to == Position(2,2));
+        arbiter.updateMotionCell(piece, Position(2,2));
+        events = arbiter.advanceTime(0);
+        REQUIRE(events.steps.size() == 1);
+        CHECK(events.steps[0].to == Position(3,3));
+        CHECK(events.steps[0].reachedDestination);
+        arbiter.finishMotion(piece);
         CHECK_FALSE(arbiter.hasActiveMotion());
     }
 
@@ -77,7 +84,7 @@ TEST_SUITE("RealTimeArbiter") {
         CHECK(events.steps[0].piece == first);
         CHECK(events.steps[1].piece == second);
         CHECK(events.steps[0].order == 0);
-        CHECK(events.steps[1].order == 0);
+        CHECK(events.steps[1].order == 1);
     }
 
     TEST_CASE("non moving or null motion is discarded") {

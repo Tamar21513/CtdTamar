@@ -12,6 +12,7 @@
 
 using namespace std;
 
+// Removes surrounding whitespace from one input line.
 static string trim(const string& str) {
     size_t start = str.find_first_not_of(" \t\r\n");
 
@@ -24,6 +25,7 @@ static string trim(const string& str) {
     return str.substr(start, end - start + 1);
 }
 
+// Runs the command-line game loop.
 void ConsoleApp::run() {
     vector<string> boardLines;
     string line;

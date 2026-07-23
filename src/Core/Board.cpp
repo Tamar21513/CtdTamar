@@ -1,10 +1,12 @@
 #include "../../include/Core/Board.hpp"
 
+// Implements Board.
 Board::Board() {
     this->height = 0;
     this->width = 0;
 }
 
+// Implements Board.
 Board::Board(int height, int width) {
     this->height = height;
     this->width = width;
@@ -16,14 +18,17 @@ Board::Board(int height, int width) {
     }
 }
 
+// Implements getHeight.
 int Board::getHeight() const {
     return height;
 }
 
+// Implements getWidth.
 int Board::getWidth() const {
     return width;
 }
 
+// Implements isInside.
 bool Board::isInside(const Position& position) const {
     int row = position.getRow();
     int col = position.getCol();
@@ -43,6 +48,7 @@ bool Board::isInside(const Position& position) const {
     return true;
 }
 
+// Implements getPieceAt.
 shared_ptr<Piece> Board::getPieceAt(const Position& position) const {
     if (!isInside(position)) {
         return nullptr;
@@ -51,10 +57,12 @@ shared_ptr<Piece> Board::getPieceAt(const Position& position) const {
     return cells[position.getRow()][position.getCol()];
 }
 
+// Implements isEmpty.
 bool Board::isEmpty(const Position& position) const {
     return getPieceAt(position) == nullptr;
 }
 
+// Implements placePiece.
 bool Board::placePiece(const Position& position, shared_ptr<Piece> piece) {
     if (!isInside(position)) {
         return false;
@@ -68,6 +76,7 @@ bool Board::placePiece(const Position& position, shared_ptr<Piece> piece) {
     return true;
 }
 
+// Implements removePiece.
 void Board::removePiece(const Position& position) {
     if (!isInside(position)) {
         return;
@@ -76,6 +85,7 @@ void Board::removePiece(const Position& position) {
     cells[position.getRow()][position.getCol()] = nullptr;
 }
 
+// Implements setPieceAt.
 void Board::setPieceAt(const Position& position, shared_ptr<Piece> piece) {
     if (!isInside(position)) {
         return;
@@ -84,6 +94,7 @@ void Board::setPieceAt(const Position& position, shared_ptr<Piece> piece) {
     cells[position.getRow()][position.getCol()] = piece;
 }
 
+// Implements movePiece.
 void Board::movePiece(const Position& source, const Position& destination) {
     if (!isInside(source) || !isInside(destination)) {
         return;

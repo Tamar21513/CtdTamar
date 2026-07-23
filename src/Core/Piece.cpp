@@ -1,5 +1,6 @@
 #include "../../include/Core/Piece.hpp"
 
+// Implements Piece.
 Piece::Piece(
     int id,
     PieceColor color,
@@ -14,36 +15,44 @@ Piece::Piece(
     this->cooldownStartedAtMs = 0;
     this->cooldownUntilMs = 0;
     this->totalCooldownMs = 0;
+    this->hasMoved = false;
 }
 
+// Implements getId.
 int Piece::getId() const {
     return id;
 }
 
+// Implements getColor.
 PieceColor Piece::getColor() const {
     return color;
 }
 
+// Implements getKind.
 PieceKind Piece::getKind() const {
     return kind;
 }
 
+// Implements getState.
 PieceState Piece::getState() const {
     return state;
 }
 
+// Implements setState.
 void Piece::setState(
     PieceState newState
 ) {
     state = newState;
 }
 
+// Implements setKind.
 void Piece::setKind(
     PieceKind newKind
 ) {
     kind = newKind;
 }
 
+// Implements startCooldown.
 void Piece::startCooldown(
     long long currentTimeMs,
     long long durationMs
@@ -59,6 +68,7 @@ void Piece::startCooldown(
         currentTimeMs + durationMs;
 }
 
+// Implements isOnCooldown.
 bool Piece::isOnCooldown(
     long long currentTimeMs
 ) const {
@@ -68,6 +78,7 @@ bool Piece::isOnCooldown(
     );
 }
 
+// Implements getRemainingCooldownMs.
 long long Piece::getRemainingCooldownMs(
     long long currentTimeMs
 ) const {
@@ -78,10 +89,12 @@ long long Piece::getRemainingCooldownMs(
     return cooldownUntilMs - currentTimeMs;
 }
 
+// Implements getTotalCooldownMs.
 long long Piece::getTotalCooldownMs() const {
     return totalCooldownMs;
 }
 
+// Implements getCooldownRatio.
 double Piece::getCooldownRatio(
     long long currentTimeMs
 ) const {
@@ -112,6 +125,7 @@ double Piece::getCooldownRatio(
     return ratio;
 }
 
+// Implements token.
 string Piece::token() const {
     string result;
 
@@ -121,6 +135,7 @@ string Piece::token() const {
     return result;
 }
 
+// Implements colorFromChar.
 PieceColor Piece::colorFromChar(
     char colorChar
 ) {
@@ -131,6 +146,7 @@ PieceColor Piece::colorFromChar(
     return PieceColor::Black;
 }
 
+// Implements kindFromChar.
 PieceKind Piece::kindFromChar(
     char kindChar
 ) {
@@ -157,6 +173,7 @@ PieceKind Piece::kindFromChar(
     return PieceKind::Pawn;
 }
 
+// Implements colorToChar.
 char Piece::colorToChar(
     PieceColor color
 ) {
@@ -167,6 +184,7 @@ char Piece::colorToChar(
     return 'b';
 }
 
+// Implements kindToChar.
 char Piece::kindToChar(
     PieceKind kind
 ) {
@@ -191,4 +209,12 @@ char Piece::kindToChar(
     }
 
     return 'P';
+}
+
+bool Piece::getHasMoved() const {
+    return hasMoved;
+}
+
+void Piece::markAsMoved() {
+    hasMoved = true;
 }
