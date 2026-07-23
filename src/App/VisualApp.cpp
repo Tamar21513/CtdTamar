@@ -1,14 +1,14 @@
+// Windows socket definitions must be loaded
+// before headers containing "using namespace std".
+#include "../../include/Network/TcpConnection.hpp"
+
 #include "../../include/App/VisualApp.hpp"
 
-#include "../../include/Control/Controller.hpp"
-
-#include "../../include/Core/Board.hpp"
+#include "../../include/Client/ClientGameState.hpp"
+#include "../../include/Client/GameClient.hpp"
+#include "../../include/Client/NetworkController.hpp"
+#include "../../include/Core/MoveHistory.hpp"
 #include "../../include/Core/Piece.hpp"
-#include "../../include/Core/Position.hpp"
-#include "../../include/Core/Results.hpp"
-
-#include "../../include/Engine/GameEngine.hpp"
-
 #include "../../include/Graphics/AnimationLibrary.hpp"
 #include "../../include/Graphics/Renderer.hpp"
 #include "../../include/Graphics/VisualSnapshotBuilder.hpp"
@@ -18,12 +18,15 @@
 #include <chrono>
 #include <deque>
 #include <iostream>
-#include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
-static const std::string WINDOW_NAME =
+namespace {
+
+const std::string WINDOW_NAME =
     "Kung Fu Chess";
 
 struct MouseClick {
@@ -35,26 +38,61 @@ struct MouseState {
     int x = 0;
     int y = 0;
 
-    std::deque<MouseClick> pendingClicks;
-
-    /*
-     * המרחק בין מרכז הכלי לבין המקום
-     * המדויק שבו העכבר לחץ עליו.
-     */
-    double grabOffsetX = 0.0;
-    double grabOffsetY = 0.0;
-
-    bool hasGrabOffset = false;
+    std::deque<MouseClick>
+        pendingClicks;
 };
 
-static MouseState mouseState;
+struct VisualLayout {
+    int boardSize;
 
-static void onMouse(
+    int boardStartX;
+    int boardStartY;
+
+    int cellSizeX;
+    int cellSizeY;
+
+    int spriteSize;
+};
+
+class SocketEnvironment {
+public:
+    SocketEnvironment() {
+        WSADATA data{};
+
+        const int result =
+            WSAStartup(
+                MAKEWORD(2, 2),
+                &data
+            );
+
+        if (result != 0) {
+            throw std::runtime_error(
+                "WSAStartup failed"
+            );
+        }
+    }
+
+    ~SocketEnvironment() {
+        WSACleanup();
+    }
+
+    SocketEnvironment(
+        const SocketEnvironment&
+    ) = delete;
+
+    SocketEnvironment& operator=(
+        const SocketEnvironment&
+    ) = delete;
+};
+
+MouseState mouseState;
+
+void onMouse(
     int event,
     int x,
     int y,
-    int flags,
-    void* userdata
+    int,
+    void*
 ) {
     mouseState.x = x;
     mouseState.y = y;
@@ -67,32 +105,66 @@ static void onMouse(
     }
 }
 
-static int findVisualPieceByCell(
+VisualLayout createVisualLayout() {
+    const int boardSize = 600;
+
+    return {
+        boardSize,
+
+        Renderer::SIDE_PANEL_WIDTH +
+            static_cast<int>(
+                boardSize * 0.11
+            ),
+
+        Renderer::SCORE_PANEL_HEIGHT +
+            static_cast<int>(
+                boardSize * 0.11
+            ),
+
+        static_cast<int>(
+            boardSize * 0.098
+        ),
+
+        static_cast<int>(
+            boardSize * 0.097
+        ),
+
+        static_cast<int>(
+            boardSize * 0.105
+        )
+    };
+}
+
+int findVisualPieceByCell(
     const std::vector<VisualPiece>& pieces,
     const Position& cell
 ) {
-    for (size_t i = 0; i < pieces.size(); i++) {
-        const VisualPiece& piece =
-            pieces[i];
-
+    for (
+        std::size_t index = 0;
+        index < pieces.size();
+        ++index
+    ) {
         if (
-            piece.row == cell.getRow() &&
-            piece.col == cell.getCol()
+            pieces[index].row ==
+                cell.getRow() &&
+            pieces[index].col ==
+                cell.getCol()
         ) {
-            return static_cast<int>(i);
+            return static_cast<int>(
+                index
+            );
         }
     }
 
     return -1;
 }
 
-static VisualPiece createSelectionGhost(
+VisualPiece createSelectionGhost(
     const VisualPiece& selectedPiece,
     int mouseX,
     int mouseY
 ) {
-    VisualPiece ghost =
-        selectedPiece;
+    VisualPiece ghost = selectedPiece;
 
     ghost.pixelX =
         static_cast<double>(mouseX);
@@ -101,144 +173,218 @@ static VisualPiece createSelectionGhost(
         static_cast<double>(mouseY);
 
     ghost.opacity = 0.55;
-
-    /*
-     * מפעיל חיתוך של השוליים השקופים.
-     */
     ghost.alignVisibleCenter = true;
 
     return ghost;
 }
 
-static void printControllerResult(
+void printControllerResult(
     const ControllerResult& result
 ) {
     std::cout
-        << "Controller: "
+        << "NetworkController: "
         << result.reason
-        << std::endl;
+        << '\n';
 }
 
-static void placeBackRank(
-    Board& board,
-    int row,
-    PieceColor color,
-    int& nextId
+void processPendingClicks(
+    NetworkController& controller,
+    bool gameOver
 ) {
-    const PieceKind backRank[8] = {
-        PieceKind::Rook,
-        PieceKind::Knight,
-        PieceKind::Bishop,
-        PieceKind::Queen,
-        PieceKind::King,
-        PieceKind::Bishop,
-        PieceKind::Knight,
-        PieceKind::Rook
-    };
+    if (gameOver) {
+        mouseState.pendingClicks.clear();
+        return;
+    }
 
-    for (int col = 0; col < 8; col++) {
-        board.placePiece(
-            Position(row, col),
-            std::make_shared<Piece>(
-                nextId++,
-                color,
-                backRank[col]
+    while (
+        !mouseState.pendingClicks.empty()
+    ) {
+        const MouseClick click =
+            mouseState.pendingClicks.front();
+
+        mouseState.pendingClicks.pop_front();
+
+        printControllerResult(
+            controller.click(
+                click.x,
+                click.y
             )
         );
     }
 }
 
-static void placePawnRank(
-    Board& board,
-    int row,
-    PieceColor color,
-    int& nextId
+void appendSelectionGhost(
+    std::vector<VisualPiece>& piecesToRender,
+    const std::vector<VisualPiece>& visualPieces,
+    const NetworkController& controller,
+    bool gameOver
 ) {
-    for (int col = 0; col < 8; col++) {
-        board.placePiece(
-            Position(row, col),
-            std::make_shared<Piece>(
-                nextId++,
-                color,
-                PieceKind::Pawn
-            )
+    if (gameOver) {
+        return;
+    }
+
+    const std::optional<Position>
+        selectedCell =
+            controller.getSelectedCell();
+
+    if (!selectedCell.has_value()) {
+        return;
+    }
+
+    const int selectedIndex =
+        findVisualPieceByCell(
+            visualPieces,
+            selectedCell.value()
+        );
+
+    if (selectedIndex < 0) {
+        return;
+    }
+
+    piecesToRender[selectedIndex].opacity =
+        0.25;
+
+    piecesToRender.push_back(
+        createSelectionGhost(
+            visualPieces[selectedIndex],
+            mouseState.x,
+            mouseState.y
+        )
+    );
+}
+
+std::vector<MoveHistoryEntry>
+convertMoveHistory(
+    const std::vector<MoveHistorySnapshot>&
+        snapshots
+) {
+    std::vector<MoveHistoryEntry> result;
+
+    result.reserve(snapshots.size());
+
+    for (
+        const MoveHistorySnapshot& snapshot :
+        snapshots
+    ) {
+        MoveHistoryEntry entry;
+
+        entry.completedAtMs =
+            snapshot.completedAtMs;
+
+        entry.color =
+            snapshot.color == "b"
+                ? PieceColor::Black
+                : PieceColor::White;
+
+        entry.pieceKind =
+            snapshot.pieceKind.empty()
+                ? PieceKind::Pawn
+                : Piece::kindFromChar(
+                    snapshot.pieceKind[0]
+                );
+
+        entry.source =
+            snapshot.source;
+
+        entry.destination =
+            snapshot.destination;
+
+        entry.wasCapture =
+            snapshot.wasCapture;
+
+        entry.wasPromotion =
+            snapshot.wasPromotion;
+
+        entry.wasJump =
+            snapshot.wasJump;
+
+        entry.notation =
+            snapshot.notation;
+
+        result.push_back(entry);
+    }
+
+    return result;
+}
+
+void waitForInitialSnapshot(
+    GameClient& client,
+    ClientGameState& gameState
+) {
+    const auto deadline =
+        std::chrono::steady_clock::now() +
+        std::chrono::seconds(5);
+
+    while (
+        std::chrono::steady_clock::now() <
+        deadline
+    ) {
+        Message update;
+
+        while (
+            client.tryReceiveUpdate(update)
+        ) {
+            gameState.applyMessage(update);
+        }
+
+        if (gameState.hasSnapshot()) {
+            return;
+        }
+
+        if (!client.isConnected()) {
+            const std::string error =
+                client.getConnectionError();
+
+            throw std::runtime_error(
+                error.empty()
+                    ? "Server disconnected"
+                    : error
+            );
+        }
+
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(10)
         );
     }
+
+    throw std::runtime_error(
+        "Timed out while waiting for "
+        "the initial game snapshot"
+    );
 }
 
-static Board createInitialVisualBoard() {
-    Board board(8, 8);
-
-    int nextId = 1;
-
-    /*
-     * הכלים השחורים למעלה.
-     */
-    placeBackRank(
-        board,
-        0,
-        PieceColor::Black,
-        nextId
-    );
-
-    placePawnRank(
-        board,
-        1,
-        PieceColor::Black,
-        nextId
-    );
-
-    /*
-     * הכלים הלבנים למטה.
-     */
-    placePawnRank(
-        board,
-        6,
-        PieceColor::White,
-        nextId
-    );
-
-    placeBackRank(
-        board,
-        7,
-        PieceColor::White,
-        nextId
-    );
-
-    return board;
-}
+} // namespace
 
 void VisualApp::run() {
     std::cout
-        << "VisualApp started"
-        << std::endl;
+        << "VisualApp started\n";
 
-    const int boardSize = 800;
+    SocketEnvironment sockets;
 
-    const int boardStartX =
-        static_cast<int>(
-            boardSize * 0.11
-        );
+    GameClient client;
 
-    const int boardStartY =
-        static_cast<int>(
-            boardSize * 0.11
-        );
+    client.connectTo(
+        "127.0.0.1",
+        5050
+    );
 
-    const int cellSizeX =
-        static_cast<int>(
-            boardSize * 0.098
-        );
+    std::cout
+        << "Connected to game server\n";
 
-    const int cellSizeY =
-        static_cast<int>(
-            boardSize * 0.097
-        );
+    ClientGameState gameState;
 
-    const int spriteSize =
-        static_cast<int>(
-            boardSize * 0.105
-        );
+    waitForInitialSnapshot(
+        client,
+        gameState
+    );
+
+    std::cout
+        << "Initial snapshot received: "
+        << gameState.getSnapshot().pieces.size()
+        << " pieces\n";
+
+    const VisualLayout layout =
+        createVisualLayout();
 
     cv::namedWindow(
         WINDOW_NAME,
@@ -252,161 +398,113 @@ void VisualApp::run() {
 
     Renderer renderer(
         R"(assets\Board\board.png)",
-        boardSize,
+        layout.boardSize,
         WINDOW_NAME
     );
 
     AnimationLibrary animationLibrary;
 
-    GameEngine engine(
-        createInitialVisualBoard()
-    );
-
-    Controller controller(
-        engine,
-        boardStartX,
-        boardStartY,
-        cellSizeX,
-        cellSizeY
+    NetworkController controller(
+        client,
+        gameState,
+        layout.boardStartX,
+        layout.boardStartY,
+        layout.cellSizeX,
+        layout.cellSizeY
     );
 
     VisualSnapshotBuilder snapshotBuilder(
-        boardStartX,
-        boardStartY,
-        cellSizeX,
-        cellSizeY,
-        spriteSize,
+        layout.boardStartX,
+        layout.boardStartY,
+        layout.cellSizeX,
+        layout.cellSizeY,
+        layout.spriteSize,
         animationLibrary
     );
-
-    std::vector<VisualPiece> visualPieces =
-        snapshotBuilder.build(
-            engine,
-            0
-        );
 
     auto previousTime =
         std::chrono::steady_clock::now();
 
     while (true) {
-        auto currentTime =
+        const auto currentTime =
             std::chrono::steady_clock::now();
 
-        long long deltaMs =
+        const long long deltaMs =
             std::chrono::duration_cast<
                 std::chrono::milliseconds
             >(
                 currentTime - previousTime
             ).count();
 
-        previousTime =
-            currentTime;
+        previousTime = currentTime;
 
-        /*
-         * לאחר סיום המשחק לא שולחים
-         * לחיצות נוספות ל־Controller.
-         */
-        if (!engine.isGameOver()) {
-            while (
-                !mouseState.pendingClicks.empty()
-            ) {
-                MouseClick click =
-                    mouseState.pendingClicks.front();
+        controller.applyPendingUpdates();
 
-                mouseState.pendingClicks.pop_front();
+        if (!client.isConnected()) {
+            std::cerr
+                << "Connection lost: "
+                << client.getConnectionError()
+                << '\n';
 
-                ControllerResult result =
-                    controller.click(
-                        click.x,
-                        click.y
-                    );
-
-                printControllerResult(
-                    result
-                );
-            }
-        } else {
-            /*
-             * מנקים לחיצות שנשארו בתור
-             * לאחר סיום המשחק.
-             */
-            mouseState.pendingClicks.clear();
+            break;
         }
 
-        /*
-         * מקדמים את זמן המשחק.
-         */
-        engine.wait(deltaMs);
-
-        /*
-         * בונים את המצב הגרפי מחדש
-         * מתוך GameEngine.
-         */
-        visualPieces =
-            snapshotBuilder.build(
-                engine,
-                deltaMs
-            );
-
-        std::vector<VisualPiece> piecesToRender =
-            visualPieces;
-
-        /*
-         * מציגים כלי רפאים רק כאשר
-         * המשחק עדיין פעיל.
-         */
-        if (!engine.isGameOver()) {
-            std::optional<Position> selectedCell =
-                controller.getSelectedCell();
-
-            if (selectedCell.has_value()) {
-                int selectedVisualIndex =
-                    findVisualPieceByCell(
-                        visualPieces,
-                        selectedCell.value()
-                    );
-
-                if (selectedVisualIndex != -1) {
-                    /*
-                     * מחלישים מעט את הכלי המקורי.
-                     */
-                    piecesToRender[
-                        selectedVisualIndex
-                    ].opacity = 0.25;
-
-                    /*
-                     * עותק שקוף שמרכז התמונה שלו
-                     * נמצא בדיוק מתחת לעכבר.
-                     */
-                    piecesToRender.push_back(
-                        createSelectionGhost(
-                            visualPieces[
-                                selectedVisualIndex
-                            ],
-                            mouseState.x,
-                            mouseState.y
-                        )
-                    );
-                }
-            }
-        }
-
-        /*
-         * חשוב:
-         * מעבירים ל־Renderer את מצב סיום המשחק.
-         */
-        renderer.render(
-            piecesToRender,
-            engine.isGameOver()
+        processPendingClicks(
+            controller,
+            gameState.isGameOver()
         );
 
-        int key =
-            cv::waitKey(16);
+        // Apply updates that arrived while a move
+        // request was being processed.
+        controller.applyPendingUpdates();
 
-        if (key == 27) {
+        const GameStateSnapshot& snapshot =
+            gameState.getSnapshot();
+
+        const std::vector<VisualPiece>
+            visualPieces =
+                snapshotBuilder.build(
+                    snapshot,
+                    deltaMs
+                );
+
+        std::vector<VisualPiece>
+            piecesToRender =
+                visualPieces;
+
+        appendSelectionGhost(
+            piecesToRender,
+            visualPieces,
+            controller,
+            snapshot.gameOver
+        );
+
+        const std::vector<MoveHistoryEntry>
+            blackMoves =
+                convertMoveHistory(
+                    snapshot.blackMoveHistory
+                );
+
+        const std::vector<MoveHistoryEntry>
+            whiteMoves =
+                convertMoveHistory(
+                    snapshot.whiteMoveHistory
+                );
+
+        renderer.render(
+            piecesToRender,
+            snapshot.gameOver,
+            snapshot.blackScore,
+            snapshot.whiteScore,
+            blackMoves,
+            whiteMoves
+        );
+
+        if (cv::waitKey(16) == 27) {
             break;
         }
     }
 
+    client.disconnect();
     cv::destroyAllWindows();
 }
