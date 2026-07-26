@@ -11,11 +11,20 @@
 #include <string>
 #include <thread>
 
+enum class PieceColor;
+
 class GameClient {
 private:
     TcpConnection connection;
 
     std::atomic<bool> connected;
+    std::atomic<bool> playerAssigned;
+    std::atomic<bool> gameStarted;
+    std::atomic<bool> gameFull;
+    std::atomic<bool> reconnecting;
+    std::atomic<bool> gameClosed;
+    std::atomic<int> reconnectSecondsRemaining;
+    std::atomic<PieceColor> assignedColor;
     std::atomic<unsigned long long> nextSequence;
 
     std::thread receiverThread;
@@ -26,6 +35,7 @@ private:
 
     std::deque<Message> incomingMessages;
     std::string connectionError;
+    std::string reconnectToken;
 
     // Continuously receives messages from the server.
     void receiveLoop();
@@ -37,11 +47,13 @@ private:
     );
 
 public:
+    // Creates a disconnected game client.
     GameClient();
 
     GameClient(const GameClient&) = delete;
     GameClient& operator=(const GameClient&) = delete;
 
+    // Disconnects and destroys the game client.
     ~GameClient();
 
     // Connects to the server and starts continuous reception.
@@ -53,7 +65,32 @@ public:
     // Disconnects and stops the receiver thread.
     void disconnect();
 
+    // Returns whether the client is connected.
     bool isConnected() const;
+
+    // Returns whether the server assigned a player color.
+    bool hasPlayerAssignment() const;
+
+    // Returns the color assigned by the server.
+    PieceColor getAssignedColor() const;
+
+    // Returns whether two players are currently connected.
+    bool hasGameStarted() const;
+
+    // Returns whether this connection was rejected as the third client.
+    bool isGameFull() const;
+
+    // Returns whether the server is waiting for a disconnected opponent.
+    bool isReconnecting() const;
+
+    // Returns whether the reconnection period expired.
+    bool isGameClosed() const;
+
+    // Returns the server-authoritative reconnection countdown.
+    int getReconnectSecondsRemaining() const;
+
+    // Returns the token needed to reclaim this player's color.
+    std::string getReconnectToken() const;
 
     // Generates a sequence number for a new request.
     unsigned long long createSequence();

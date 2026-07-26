@@ -5,10 +5,18 @@
 #include "../Network/TcpConnection.hpp"
 #include "../Network/TcpServer.hpp"
 
+#include "ClientSession.hpp"
+
 #include "../Core/Board.hpp"
 #include "../Engine/GameEngine.hpp"
 #include "../Messaging/EngineMessageHandler.hpp"
 #include "../Messaging/MessageBus.hpp"
+
+#include <atomic>
+#include <chrono>
+#include <memory>
+#include <mutex>
+#include <string>
 
 class GameServer {
 private:
@@ -19,13 +27,71 @@ private:
     EngineMessageHandler messageHandler;
     TcpServer tcpServer;
 
+    std::shared_ptr<ClientSession> whitePlayer;
+    std::shared_ptr<ClientSession> blackPlayer;
+
+    std::mutex playersMutex;
+    std::mutex engineMutex;
+
+    std::atomic<int> nextClientId;
+    std::atomic<bool> gameStarted;
+
+    std::string whiteReconnectToken;
+    std::string blackReconnectToken;
+    bool gameWasStarted;
+    bool reconnectionPending;
+    bool closingExpiredGame;
+    PieceColor reservedColor;
+    std::chrono::steady_clock::time_point
+        reconnectionDeadline;
+    int lastReconnectSecondsSent;
+
     // Creates the standard initial chess board.
     static Board createInitialBoard();
 
-    // Handles all requests from one connected client.
-    void handleClient(TcpConnection& client);
+    // Creates a session and assigns an available color.
+    std::shared_ptr<ClientSession> createSession(
+        TcpConnection connection,
+        const std::string& requestedToken
+    );
+
+    // Handles requests from one connected client.
+    void handleClient(
+        const std::shared_ptr<ClientSession>& session
+    );
+
+    // Advances the game clock and broadcasts game states.
+    void runGameLoop();
+
+    // Sends a serialized message to all connected players.
+    void broadcast(
+        const std::string& serializedMessage
+    );
+
+    // Removes a disconnected client from its player slot.
+    void removeSession(
+        const std::shared_ptr<ClientSession>& session
+    );
+
+    // Returns whether both player slots are connected.
+    bool hasTwoPlayers();
+
+    // Creates an opaque token for one player slot.
+    std::string createReconnectToken(
+        int clientId
+    ) const;
+
+    // Sends the current reconnection countdown.
+    void sendReconnectingStatus(int secondsRemaining);
+
+    // Updates or expires a pending reconnection period.
+    void updateReconnectionState();
+
+    // Closes an expired game and prepares for new players.
+    void closeExpiredGame();
 
 public:
+    // Creates a game server on the requested port.
     explicit GameServer(unsigned short port);
 
     // Starts the permanent server loop.

@@ -34,7 +34,10 @@ public:
         int blackScore = 0,
         int whiteScore = 0,
         const std::vector<MoveHistoryEntry>& blackMoves = {},
-        const std::vector<MoveHistoryEntry>& whiteMoves = {}
+        const std::vector<MoveHistoryEntry>& whiteMoves = {},
+        const std::string& localPlayerColor = "",
+        const std::string& statusLine1 = "",
+        const std::string& statusLine2 = ""
     );
 
     cv::Mat cropTransparentMargins(const cv::Mat& sprite) const;
@@ -60,7 +63,13 @@ private:
     ) const;
     void drawSleepZ(cv::Mat& board, int x, int y, VisualState state);
     void drawGameOver(cv::Mat& board);
-    void drawScore(cv::Mat& canvas, const std::string& label, int score, int y);
+    void drawScore(cv::Mat& canvas, const std::string& label, int score, int y, bool localPlayer);
+    void drawPlayerBanner(
+        cv::Mat& canvas,
+        const std::string& localPlayerColor,
+        const std::string& statusLine1,
+        const std::string& statusLine2
+    );
     void drawMoveHistory(cv::Mat& canvas, const std::vector<MoveHistoryEntry>& moves,
         const std::string& title, int x, int y, int width, int height);
     std::string formatTime(long long timeMs) const;

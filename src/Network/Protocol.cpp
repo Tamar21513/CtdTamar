@@ -976,6 +976,27 @@ std::string Protocol::messageTypeToString(
         case MessageType::MoveRejected:
             return "move_rejected";
 
+        case MessageType::PlayerAssigned:
+            return "player_assigned";
+
+        case MessageType::WaitingForOpponent:
+            return "waiting_for_opponent";
+
+        case MessageType::GameStarted:
+            return "game_started";
+
+        case MessageType::GameFull:
+            return "game_full";
+
+        case MessageType::ReconnectRequest:
+            return "reconnect_request";
+
+        case MessageType::Reconnecting:
+            return "reconnecting";
+
+        case MessageType::GameClosed:
+            return "game_closed";
+
         case MessageType::GameStateUpdated:
             return "game_state_updated";
 
@@ -1005,6 +1026,34 @@ MessageType Protocol::messageTypeFromString(
 
     if (value == "move_rejected") {
         return MessageType::MoveRejected;
+    }
+
+    if (value == "player_assigned") {
+        return MessageType::PlayerAssigned;
+    }
+
+    if (value == "waiting_for_opponent") {
+        return MessageType::WaitingForOpponent;
+    }
+
+    if (value == "game_started") {
+        return MessageType::GameStarted;
+    }
+
+    if (value == "game_full") {
+        return MessageType::GameFull;
+    }
+
+    if (value == "reconnect_request") {
+        return MessageType::ReconnectRequest;
+    }
+
+    if (value == "reconnecting") {
+        return MessageType::Reconnecting;
+    }
+
+    if (value == "game_closed") {
+        return MessageType::GameClosed;
     }
 
     if (value == "game_state_updated") {
@@ -1045,6 +1094,14 @@ std::string Protocol::serialize(
         << ",\"reason\":\""
         << escapeJson(message.reason)
         << "\""
+        << ",\"playerColor\":\""
+        << escapeJson(message.playerColor)
+        << "\""
+        << ",\"reconnectToken\":\""
+        << escapeJson(message.reconnectToken)
+        << "\""
+        << ",\"secondsRemaining\":"
+        << message.secondsRemaining
         << ",\"createdAtMs\":"
         << message.createdAtMs
         << ",\"hasSnapshot\":"
@@ -1092,12 +1149,22 @@ Message Protocol::deserialize(
         readPosition(json, "destination", true);
     message.accepted = readBool(json, "accepted");
     message.reason = readString(json, "reason");
+    message.playerColor = readString(json, "playerColor");
+    message.reconnectToken =
+        readString(json, "reconnectToken");
+    message.secondsRemaining =
+        readInt(json, "secondsRemaining");
     message.createdAtMs = readSigned(json, "createdAtMs");
     message.hasSnapshot = readBool(json, "hasSnapshot");
 
     requireNonNegative(
         message.createdAtMs,
         "createdAtMs"
+    );
+
+    requireNonNegative(
+        message.secondsRemaining,
+        "secondsRemaining"
     );
 
     if (message.hasSnapshot) {

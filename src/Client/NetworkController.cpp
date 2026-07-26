@@ -1,5 +1,7 @@
 #include "../../include/Client/NetworkController.hpp"
 
+#include "../../include/Core/Piece.hpp"
+
 #include <stdexcept>
 #include <string>
 
@@ -99,6 +101,26 @@ bool NetworkController::isPieceAvailable(
         piece->remainingCooldownMs <= 0;
 }
 
+bool NetworkController::isOwnedPiece(
+    const PieceSnapshot* piece
+) const {
+    if (
+        piece == nullptr ||
+        piece->token.empty() ||
+        !client.hasPlayerAssignment()
+    ) {
+        return false;
+    }
+
+    const char assignedColor =
+        client.getAssignedColor() ==
+                PieceColor::White
+            ? 'w'
+            : 'b';
+
+    return piece->token[0] == assignedColor;
+}
+
 // Handles the first click.
 ControllerResult
 NetworkController::selectFirstPiece(
@@ -123,6 +145,13 @@ NetworkController::selectFirstPiece(
         };
     }
 
+    if (!isOwnedPiece(piece)) {
+        return {
+            false,
+            "not_your_piece"
+        };
+    }
+
     selectedCell = clickedPosition;
 
     return {
@@ -142,12 +171,17 @@ NetworkController::selectFriendlyPiece(
             clickedPosition
         );
 
-    if (!isPieceAvailable(piece)) {
+    if (
+        !isPieceAvailable(piece) ||
+        !isOwnedPiece(piece)
+    ) {
         selectedCell.reset();
 
         return {
             false,
-            Reasons::MOTION_IN_PROGRESS
+            !isOwnedPiece(piece)
+                ? "not_your_piece"
+                : Reasons::MOTION_IN_PROGRESS
         };
     }
 
@@ -166,6 +200,15 @@ ControllerResult NetworkController::sendRequest(
     const Position& source,
     const Position& destination
 ) {
+    if (!client.hasGameStarted()) {
+        selectedCell.reset();
+
+        return {
+            false,
+            "waiting_for_opponent"
+        };
+    }
+
     if (!client.isConnected()) {
         return {
             false,
@@ -262,6 +305,15 @@ NetworkController::handleSelectedCell(
         };
     }
 
+    if (!isOwnedPiece(selectedPiece)) {
+        selectedCell.reset();
+
+        return {
+            false,
+            "not_your_piece"
+        };
+    }
+
     const PieceSnapshot* clickedPiece =
         gameState.findPieceAt(
             clickedPosition
@@ -292,6 +344,15 @@ ControllerResult NetworkController::click(
 ) {
     // Apply server updates before interpreting the click.
     applyPendingUpdates();
+
+    if (!client.hasGameStarted()) {
+        selectedCell.reset();
+
+        return {
+            false,
+            "waiting_for_opponent"
+        };
+    }
 
     if (!gameState.hasSnapshot()) {
         return {
@@ -341,6 +402,15 @@ ControllerResult NetworkController::jump(
 ) {
     applyPendingUpdates();
 
+    if (!client.hasGameStarted()) {
+        selectedCell.reset();
+
+        return {
+            false,
+            "waiting_for_opponent"
+        };
+    }
+
     if (!gameState.hasSnapshot()) {
         return {
             false,
@@ -369,6 +439,20 @@ ControllerResult NetworkController::jump(
         };
     }
 
+    const PieceSnapshot* piece =
+        gameState.findPieceAt(
+            clickedCell.value()
+        );
+
+    if (!isOwnedPiece(piece)) {
+        selectedCell.reset();
+
+        return {
+            false,
+            "not_your_piece"
+        };
+    }
+
     return sendRequest(
         MessageType::JumpRequest,
         clickedCell.value(),
@@ -387,6 +471,10 @@ bool NetworkController::applyPendingUpdates() {
         }
     }
 
+    if (!client.hasGameStarted()) {
+        selectedCell.reset();
+    }
+
     if (
         stateWasUpdated &&
         selectedCell.has_value()
@@ -396,7 +484,10 @@ bool NetworkController::applyPendingUpdates() {
                 selectedCell.value()
             );
 
-        if (!isPieceAvailable(selectedPiece)) {
+        if (
+            !isPieceAvailable(selectedPiece) ||
+            !isOwnedPiece(selectedPiece)
+        ) {
             selectedCell.reset();
         }
     }

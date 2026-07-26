@@ -46,7 +46,10 @@ void Renderer::render(
     int blackScore,
     int whiteScore,
     const std::vector<MoveHistoryEntry>& blackMoves,
-    const std::vector<MoveHistoryEntry>& whiteMoves
+    const std::vector<MoveHistoryEntry>& whiteMoves,
+    const std::string& localPlayerColor,
+    const std::string& statusLine1,
+    const std::string& statusLine2
 ) {
     const cv::Mat board = loadBoardImage();
     if (board.empty()) {
@@ -59,8 +62,30 @@ void Renderer::render(
     cv::Mat canvas(canvasHeight, canvasWidth, CV_8UC3, cv::Scalar(225, 225, 225));
     board.copyTo(canvas(cv::Rect(SIDE_PANEL_WIDTH, SCORE_PANEL_HEIGHT, boardDisplaySize, boardDisplaySize)));
 
-    drawScore(canvas, "BLACK SCORE", blackScore, 0);
-    drawScore(canvas, "WHITE SCORE", whiteScore, SCORE_PANEL_HEIGHT + boardDisplaySize);
+    const bool localIsBlack =
+        localPlayerColor == "black";
+    const bool localIsWhite =
+        localPlayerColor == "white";
+
+    drawScore(
+        canvas,
+        localIsBlack
+            ? "Your score"
+            : "Opponent score",
+        blackScore,
+        0,
+        localIsBlack
+    );
+    drawScore(
+        canvas,
+        localIsWhite
+            ? "Your score"
+            : "Opponent score",
+        whiteScore,
+        SCORE_PANEL_HEIGHT +
+            boardDisplaySize,
+        localIsWhite
+    );
     drawMoveHistory(canvas, blackMoves, "BLACK MOVES", 0, SCORE_PANEL_HEIGHT, SIDE_PANEL_WIDTH, boardDisplaySize);
     drawMoveHistory(canvas, whiteMoves, "WHITE MOVES", SIDE_PANEL_WIDTH + boardDisplaySize,
                     SCORE_PANEL_HEIGHT, SIDE_PANEL_WIDTH, boardDisplaySize);
@@ -68,6 +93,12 @@ void Renderer::render(
     if (gameOver) {
         drawGameOver(canvas);
     }
+    drawPlayerBanner(
+        canvas,
+        localPlayerColor,
+        statusLine1,
+        statusLine2
+    );
     cv::imshow(windowName, canvas);
 }
 
@@ -80,10 +111,23 @@ void Renderer::drawPieces(cv::Mat& canvas, const std::vector<VisualPiece>& piece
 }
 
 // Draws one score panel.
-void Renderer::drawScore(cv::Mat& canvas, const std::string& label, int score, int y) {
+void Renderer::drawScore(
+    cv::Mat& canvas,
+    const std::string& label,
+    int score,
+    int y,
+    bool localPlayer
+) {
     const cv::Rect area(SIDE_PANEL_WIDTH, y, boardDisplaySize, SCORE_PANEL_HEIGHT);
     cv::rectangle(canvas, area, cv::Scalar(245, 245, 245), cv::FILLED);
-    cv::rectangle(canvas, area, cv::Scalar(120, 120, 120), 1);
+    cv::rectangle(
+        canvas,
+        area,
+        localPlayer
+            ? cv::Scalar(0, 165, 255)
+            : cv::Scalar(120, 120, 120),
+        localPlayer ? 5 : 1
+    );
 
     const std::string text = label + ": " + std::to_string(score);
     int baseline = 0;
@@ -94,6 +138,114 @@ void Renderer::drawScore(cv::Mat& canvas, const std::string& label, int score, i
     );
     cv::putText(canvas, text, origin, cv::FONT_HERSHEY_SIMPLEX, 0.8,
                 cv::Scalar(35, 35, 35), 2, cv::LINE_AA);
+}
+
+// Draws the local color and the current connection state.
+void Renderer::drawPlayerBanner(
+    cv::Mat& canvas,
+    const std::string& localPlayerColor,
+    const std::string& statusLine1,
+    const std::string& statusLine2
+) {
+    if (localPlayerColor.empty()) {
+        return;
+    }
+
+    const std::string playerTitle =
+        localPlayerColor == "black"
+            ? "YOU ARE BLACK"
+            : "YOU ARE WHITE";
+
+    const bool hasStatus =
+        !statusLine1.empty();
+    const int bannerHeight =
+        hasStatus
+            ? (statusLine2.empty() ? 100 : 130)
+            : 48;
+    const int bannerWidth =
+        hasStatus ? 520 : 250;
+    const int x =
+        SIDE_PANEL_WIDTH +
+        (boardDisplaySize - bannerWidth) / 2;
+    const int y =
+        SCORE_PANEL_HEIGHT + 10;
+    const cv::Rect area(
+        x,
+        y,
+        bannerWidth,
+        bannerHeight
+    );
+
+    cv::rectangle(
+        canvas,
+        area,
+        cv::Scalar(245, 245, 245),
+        cv::FILLED
+    );
+    cv::rectangle(
+        canvas,
+        area,
+        cv::Scalar(0, 120, 215),
+        4
+    );
+
+    const auto drawCenteredText =
+        [&canvas, &area](
+            const std::string& text,
+            int baselineY,
+            double scale,
+            int thickness
+        ) {
+            int baseline = 0;
+            const cv::Size size =
+                cv::getTextSize(
+                    text,
+                    cv::FONT_HERSHEY_DUPLEX,
+                    scale,
+                    thickness,
+                    &baseline
+                );
+
+            cv::putText(
+                canvas,
+                text,
+                cv::Point(
+                    area.x +
+                        (area.width - size.width) / 2,
+                    area.y + baselineY
+                ),
+                cv::FONT_HERSHEY_DUPLEX,
+                scale,
+                cv::Scalar(25, 25, 25),
+                thickness,
+                cv::LINE_AA
+            );
+        };
+
+    drawCenteredText(
+        playerTitle,
+        32,
+        0.8,
+        2
+    );
+
+    if (hasStatus) {
+        drawCenteredText(
+            statusLine1,
+            70,
+            0.75,
+            2
+        );
+    }
+
+    if (!statusLine2.empty()) {
+        drawCenteredText(
+            statusLine2,
+            108,
+            0.72,
+            2
+        );
+    }
 }
 
 // Formats milliseconds for the move history panel.

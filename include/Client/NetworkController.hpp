@@ -35,6 +35,10 @@ private:
         const PieceSnapshot* piece
     ) const;
 
+    bool isOwnedPiece(
+        const PieceSnapshot* piece
+    ) const;
+
     ControllerResult selectFirstPiece(
         const Position& clickedPosition
     );

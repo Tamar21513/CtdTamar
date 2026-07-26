@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -327,6 +328,10 @@ void waitForInitialSnapshot(
             gameState.applyMessage(update);
         }
 
+        if (client.isGameFull()) {
+            return;
+        }
+
         if (gameState.hasSnapshot()) {
             return;
         }
@@ -351,6 +356,114 @@ void waitForInitialSnapshot(
         "Timed out while waiting for "
         "the initial game snapshot"
     );
+}
+
+std::string buildPlayerStatus(
+    const GameClient& client
+) {
+    if (!client.hasPlayerAssignment()) {
+        return "";
+    }
+
+    const std::string playerLabel =
+        client.getAssignedColor() ==
+                PieceColor::White
+            ? "White Player"
+            : "Black Player";
+
+    if (!client.hasGameStarted()) {
+        return
+            playerLabel +
+            "  |  Waiting for opponent...";
+    }
+
+    return playerLabel;
+}
+
+// Returns the color token used by the renderer.
+std::string buildLocalPlayerColor(
+    const GameClient& client
+) {
+    if (!client.hasPlayerAssignment()) {
+        return "";
+    }
+
+    return
+        client.getAssignedColor() ==
+                PieceColor::White
+            ? "white"
+            : "black";
+}
+
+// Builds the server-authoritative status lines.
+std::pair<std::string, std::string>
+buildConnectionStatus(
+    const GameClient& client
+) {
+    if (client.isGameClosed()) {
+        return {
+            "Game closed",
+            "Opponent did not reconnect"
+        };
+    }
+
+    if (client.isReconnecting()) {
+        return {
+            "Opponent disconnected",
+            "Waiting for reconnection: " +
+                std::to_string(
+                    client
+                        .getReconnectSecondsRemaining()
+                )
+        };
+    }
+
+    if (!client.hasGameStarted()) {
+        return {
+            "Waiting for opponent...",
+            ""
+        };
+    }
+
+    return {"", ""};
+}
+
+void showGameFullMessage() {
+    cv::Mat screen(
+        240,
+        640,
+        CV_8UC3,
+        cv::Scalar(245, 245, 245)
+    );
+
+    const std::string text =
+        "Game is full";
+    int baseline = 0;
+    const cv::Size textSize =
+        cv::getTextSize(
+            text,
+            cv::FONT_HERSHEY_DUPLEX,
+            1.3,
+            2,
+            &baseline
+        );
+
+    cv::putText(
+        screen,
+        text,
+        cv::Point(
+            (screen.cols - textSize.width) / 2,
+            (screen.rows + textSize.height) / 2
+        ),
+        cv::FONT_HERSHEY_DUPLEX,
+        1.3,
+        cv::Scalar(35, 35, 35),
+        2,
+        cv::LINE_AA
+    );
+
+    cv::imshow(WINDOW_NAME, screen);
+    cv::waitKey(0);
 }
 
 } // namespace
@@ -378,10 +491,26 @@ void VisualApp::run() {
         gameState
     );
 
+    if (client.isGameFull()) {
+        cv::namedWindow(
+            WINDOW_NAME,
+            cv::WINDOW_AUTOSIZE
+        );
+        showGameFullMessage();
+        client.disconnect();
+        cv::destroyAllWindows();
+        return;
+    }
+
     std::cout
         << "Initial snapshot received: "
         << gameState.getSnapshot().pieces.size()
         << " pieces\n";
+
+    std::cout
+        << "Reconnect token: "
+        << client.getReconnectToken()
+        << '\n';
 
     const VisualLayout layout =
         createVisualLayout();
@@ -440,7 +569,10 @@ void VisualApp::run() {
 
         controller.applyPendingUpdates();
 
-        if (!client.isConnected()) {
+        if (
+            !client.isConnected() &&
+            !client.isGameClosed()
+        ) {
             std::cerr
                 << "Connection lost: "
                 << client.getConnectionError()
@@ -451,7 +583,8 @@ void VisualApp::run() {
 
         processPendingClicks(
             controller,
-            gameState.isGameOver()
+            gameState.isGameOver() ||
+                client.isGameClosed()
         );
 
         // Apply updates that arrived while a move
@@ -491,13 +624,30 @@ void VisualApp::run() {
                     snapshot.whiteMoveHistory
                 );
 
+        const auto connectionStatus =
+            buildConnectionStatus(client);
+
         renderer.render(
             piecesToRender,
             snapshot.gameOver,
             snapshot.blackScore,
             snapshot.whiteScore,
             blackMoves,
-            whiteMoves
+            whiteMoves,
+            buildLocalPlayerColor(client),
+            connectionStatus.first,
+            connectionStatus.second
+        );
+
+        const std::string playerStatus =
+            buildPlayerStatus(client);
+
+        cv::setWindowTitle(
+            WINDOW_NAME,
+            playerStatus.empty()
+                ? WINDOW_NAME
+                : WINDOW_NAME + " - " +
+                    playerStatus
         );
 
         if (cv::waitKey(16) == 27) {

@@ -11,6 +11,13 @@ enum class MessageType {
     JumpRequest,
     MoveAccepted,
     MoveRejected,
+    PlayerAssigned,
+    WaitingForOpponent,
+    GameStarted,
+    GameFull,
+    ReconnectRequest,
+    Reconnecting,
+    GameClosed,
     GameStateUpdated,
     GameOver
 };
@@ -25,6 +32,9 @@ struct Message {
 
     bool accepted = false;
     std::string reason;
+    std::string playerColor;
+    std::string reconnectToken;
+    int secondsRemaining = 0;
 
     long long createdAtMs = 0;
 
