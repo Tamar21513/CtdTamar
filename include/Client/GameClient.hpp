@@ -22,7 +22,9 @@ private:
     std::atomic<bool> gameStarted;
     std::atomic<bool> gameFull;
     std::atomic<bool> reconnecting;
+    std::atomic<bool> tryingToReconnect;
     std::atomic<bool> gameClosed;
+    std::atomic<bool> stopRequested;
     std::atomic<int> reconnectSecondsRemaining;
     std::atomic<PieceColor> assignedColor;
     std::atomic<unsigned long long> nextSequence;
@@ -36,9 +38,22 @@ private:
     std::deque<Message> incomingMessages;
     std::string connectionError;
     std::string reconnectToken;
+    std::string serverIp;
+    unsigned short serverPort;
 
     // Continuously receives messages from the server.
     void receiveLoop();
+
+    // Opens one connection and sends the saved token.
+    bool connectWithSavedToken();
+
+    // Marks a recoverable connection loss.
+    void markConnectionLost(
+        const std::string& error
+    );
+
+    // Waits before the next serial reconnect attempt.
+    bool waitForReconnectAttempt();
 
     // Checks whether a message is the response for a request.
     static bool isMatchingResponse(
@@ -82,6 +97,9 @@ public:
 
     // Returns whether the server is waiting for a disconnected opponent.
     bool isReconnecting() const;
+
+    // Returns whether this client is restoring its own connection.
+    bool isTryingToReconnect() const;
 
     // Returns whether the reconnection period expired.
     bool isGameClosed() const;

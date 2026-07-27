@@ -3,6 +3,7 @@
 
 #include "../../include/Server/ServerApp.hpp"
 #include "../../include/Server/GameServer.hpp"
+#include "../../include/Network/NetworkDefaults.hpp"
 
 #include <stdexcept>
 
@@ -37,8 +38,13 @@ namespace {
 }
 
 void ServerApp::run() {
+    run(NetworkDefaults::PORT);
+}
+
+// Runs the server on the requested TCP port.
+void ServerApp::run(unsigned short port) {
     SocketEnvironment sockets;
 
-    GameServer server(5050);
+    GameServer server(port);
     server.run();
 }

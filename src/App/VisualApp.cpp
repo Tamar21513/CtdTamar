@@ -12,6 +12,7 @@
 #include "../../include/Graphics/AnimationLibrary.hpp"
 #include "../../include/Graphics/Renderer.hpp"
 #include "../../include/Graphics/VisualSnapshotBuilder.hpp"
+#include "../../include/Network/NetworkDefaults.hpp"
 
 #include <opencv2/opencv.hpp>
 
@@ -403,7 +404,29 @@ buildConnectionStatus(
     if (client.isGameClosed()) {
         return {
             "Game closed",
-            "Opponent did not reconnect"
+            "Reconnection time expired"
+        };
+    }
+
+    if (client.isTryingToReconnect()) {
+        std::string secondLine =
+            "Trying to reconnect...";
+
+        if (
+            client.getReconnectSecondsRemaining() >
+            0
+        ) {
+            secondLine +=
+                "  Reconnection time left: " +
+                std::to_string(
+                    client
+                        .getReconnectSecondsRemaining()
+                );
+        }
+
+        return {
+            "Connection lost",
+            secondLine
         };
     }
 
@@ -468,7 +491,19 @@ void showGameFullMessage() {
 
 } // namespace
 
+// Runs the visual client with the default endpoint.
 void VisualApp::run() {
+    run(
+        NetworkDefaults::HOST,
+        NetworkDefaults::PORT
+    );
+}
+
+// Runs the visual client against one server endpoint.
+void VisualApp::run(
+    const std::string& serverHost,
+    unsigned short serverPort
+) {
     std::cout
         << "VisualApp started\n";
 
@@ -476,10 +511,20 @@ void VisualApp::run() {
 
     GameClient client;
 
-    client.connectTo(
-        "127.0.0.1",
-        5050
-    );
+    try {
+        client.connectTo(
+            serverHost,
+            serverPort
+        );
+    }
+    catch (...) {
+        throw std::runtime_error(
+            "Unable to connect to " +
+            serverHost +
+            ":" +
+            std::to_string(serverPort)
+        );
+    }
 
     std::cout
         << "Connected to game server\n";
@@ -571,6 +616,7 @@ void VisualApp::run() {
 
         if (
             !client.isConnected() &&
+            !client.isTryingToReconnect() &&
             !client.isGameClosed()
         ) {
             std::cerr
@@ -598,7 +644,9 @@ void VisualApp::run() {
             visualPieces =
                 snapshotBuilder.build(
                     snapshot,
-                    deltaMs
+                    client.hasGameStarted()
+                        ? deltaMs
+                        : 0
                 );
 
         std::vector<VisualPiece>
@@ -650,7 +698,15 @@ void VisualApp::run() {
                     playerStatus
         );
 
-        if (cv::waitKey(16) == 27) {
+        const int key = cv::waitKey(16);
+
+        if (
+            key == 27 ||
+            cv::getWindowProperty(
+                WINDOW_NAME,
+                cv::WND_PROP_VISIBLE
+            ) < 1
+        ) {
             break;
         }
     }

@@ -5,9 +5,13 @@
 #include "../../include/Client/GameClient.hpp"
 #include "../../include/Client/ClientGameState.hpp"
 #include "../../include/Client/NetworkController.hpp"
+#include "../../include/Core/Piece.hpp"
+#include "../../include/Network/NetworkDefaults.hpp"
 
+#include <chrono>
 #include <iostream>
 #include <stdexcept>
+#include <thread>
 
 namespace {
 
@@ -76,44 +80,112 @@ void printResponse(
         << '\n';
 }
 
+// Waits for an assignment, snapshot, and game start.
+void waitForReadyGame(
+    GameClient& client,
+    ClientGameState& gameState
+) {
+    const auto deadline =
+        std::chrono::steady_clock::now() +
+        std::chrono::seconds(15);
+
+    while (
+        std::chrono::steady_clock::now() <
+        deadline
+    ) {
+        Message update;
+
+        while (client.tryReceiveUpdate(update)) {
+            gameState.applyMessage(update);
+        }
+
+        if (
+            client.hasPlayerAssignment() &&
+            client.hasGameStarted() &&
+            gameState.hasSnapshot()
+        ) {
+            return;
+        }
+
+        if (!client.isConnected()) {
+            throw std::runtime_error(
+                "Connection lost while waiting "
+                "for the game to start"
+            );
+        }
+
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(10)
+        );
+    }
+
+    throw std::runtime_error(
+        "Timed out while waiting for the game to start"
+    );
+}
+
 } // namespace
 
+// Runs the client with the default endpoint.
 void ClientApp::run() {
+    run(
+        NetworkDefaults::HOST,
+        NetworkDefaults::PORT
+    );
+}
+
+// Runs the client against one server endpoint.
+void ClientApp::run(
+    const std::string& serverHost,
+    unsigned short serverPort
+) {
     SocketEnvironment sockets;
     GameClient client;
 
-    client.connectTo(
-        "127.0.0.1",
-        5050
-    );
+    try {
+        client.connectTo(
+            serverHost,
+            serverPort
+        );
+    }
+    catch (...) {
+        throw std::runtime_error(
+            "Unable to connect to " +
+            serverHost +
+            ":" +
+            std::to_string(serverPort)
+        );
+    }
 
     std::cout
         << "Connected to game server\n";
 
-    // Legal white-pawn move: e2 -> e3
+    ClientGameState gameState;
+    waitForReadyGame(client, gameState);
+
+    const bool isWhite =
+        client.getAssignedColor() ==
+        PieceColor::White;
+
+    const Position firstSource =
+        isWhite
+            ? Position(6, 4)
+            : Position(1, 4);
+
+    const Position firstDestination =
+        isWhite
+            ? Position(5, 4)
+            : Position(2, 4);
+
+    // Sends one legal pawn move for the assigned color.
     const Message firstResponse =
         sendMove(
             client,
-            Position(6, 4),
-            Position(5, 4)
+            firstSource,
+            firstDestination
         );
 
     printResponse(1, firstResponse);
-
-    ClientGameState gameState;
-    Message initialUpdate;
-
-    if (!client.tryReceiveUpdate(initialUpdate)) {
-        throw std::runtime_error(
-            "Initial game-state update was not received"
-        );
-    }
-
-    if (!gameState.applyMessage(initialUpdate)) {
-        throw std::runtime_error(
-            "Initial update has no snapshot"
-        );
-    }
 
     if (
         gameState.getSnapshot().pieces.size()
@@ -174,11 +246,17 @@ NetworkController controller(
     100
 );
 
-// Select the black pawn at row 1, column 3.
+const int ownPawnRow =
+    isWhite ? 6 : 1;
+
+const int ownDestinationRow =
+    isWhite ? 5 : 2;
+
+// Select a pawn belonging to this client.
 const ControllerResult selectionResult =
     controller.click(
         350,
-        150
+        ownPawnRow * 100 + 50
     );
 
 if (
@@ -190,11 +268,11 @@ if (
     );
 }
 
-// Request the legal move (1,3) -> (2,3).
+// Request one legal move for the selected pawn.
 const ControllerResult moveResult =
     controller.click(
         350,
-        250
+        ownDestinationRow * 100 + 50
     );
 
     std::cout

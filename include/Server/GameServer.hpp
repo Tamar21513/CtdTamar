@@ -17,6 +17,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 
 class GameServer {
 private:
@@ -38,6 +39,8 @@ private:
 
     std::string whiteReconnectToken;
     std::string blackReconnectToken;
+    std::unordered_set<std::string>
+        expiredReconnectTokens;
     bool gameWasStarted;
     bool reconnectionPending;
     bool closingExpiredGame;

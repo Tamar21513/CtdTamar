@@ -28,6 +28,7 @@ GameServer::GameServer(unsigned short port)
       gameStarted(false),
       whiteReconnectToken(),
       blackReconnectToken(),
+      expiredReconnectTokens(),
       gameWasStarted(false),
       reconnectionPending(false),
       closingExpiredGame(false),
@@ -139,6 +140,43 @@ GameServer::createSession(
 
     const int clientId =
         nextClientId.fetch_add(1);
+
+    if (closingExpiredGame) {
+        Message fullMessage;
+        fullMessage.type = MessageType::GameFull;
+        fullMessage.accepted = false;
+        fullMessage.reason = "game_closing";
+
+        connection.sendMessage(
+            Protocol::serialize(
+                fullMessage
+            )
+        );
+        connection.close();
+        return nullptr;
+    }
+
+    if (
+        !requestedToken.empty() &&
+        expiredReconnectTokens.find(
+            requestedToken
+        ) != expiredReconnectTokens.end()
+    ) {
+        Message closedMessage;
+        closedMessage.type =
+            MessageType::GameClosed;
+        closedMessage.accepted = false;
+        closedMessage.reason =
+            "opponent_did_not_reconnect";
+
+        connection.sendMessage(
+            Protocol::serialize(
+                closedMessage
+            )
+        );
+        connection.close();
+        return nullptr;
+    }
 
     if (reconnectionPending) {
         const std::string& reservedToken =
@@ -433,6 +471,17 @@ void GameServer::closeExpiredGame() {
         closingExpiredGame = true;
         reconnectionPending = false;
         gameStarted.store(false);
+
+        if (!whiteReconnectToken.empty()) {
+            expiredReconnectTokens.insert(
+                whiteReconnectToken
+            );
+        }
+        if (!blackReconnectToken.empty()) {
+            expiredReconnectTokens.insert(
+                blackReconnectToken
+            );
+        }
 
         if (whitePlayer != nullptr) {
             sessions.push_back(whitePlayer);
@@ -917,9 +966,11 @@ void GameServer::run() {
     tcpServer.start(port);
 
     std::cout
-        << "Game server listening on port "
+        << "Game server listening on 0.0.0.0:"
         << port
-        << "...\n";
+        << '\n'
+        << "Clients should connect using this "
+        << "computer's IPv4 address.\n";
 
     std::thread gameLoopThread(
         &GameServer::runGameLoop,

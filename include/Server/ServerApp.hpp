@@ -4,6 +4,9 @@
 class ServerApp {
 public:
     void run();
+
+    // Runs the server on the requested TCP port.
+    void run(unsigned short port);
 };
 
 #endif

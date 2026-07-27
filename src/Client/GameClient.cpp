@@ -15,14 +15,18 @@ GameClient::GameClient()
       gameStarted(false),
       gameFull(false),
       reconnecting(false),
+      tryingToReconnect(false),
       gameClosed(false),
+      stopRequested(false),
       reconnectSecondsRemaining(0),
       assignedColor(PieceColor::White),
       nextSequence(1),
       receiverThread(),
       incomingMessages(),
       connectionError(),
-      reconnectToken() {
+      reconnectToken(),
+      serverIp(),
+      serverPort(0) {
     const char* token =
         std::getenv("CTD_RECONNECT_TOKEN");
 
@@ -47,10 +51,6 @@ void GameClient::connectTo(
         );
     }
 
-    if (receiverThread.joinable()) {
-        receiverThread.join();
-    }
-
     {
         std::lock_guard<std::mutex> lock(
             incomingMutex
@@ -58,37 +58,26 @@ void GameClient::connectTo(
 
         incomingMessages.clear();
         connectionError.clear();
+        serverIp = ip;
+        serverPort = port;
     }
 
+    stopRequested.store(false);
     playerAssigned.store(false);
     gameStarted.store(false);
     gameFull.store(false);
     reconnecting.store(false);
+    tryingToReconnect.store(false);
     gameClosed.store(false);
     reconnectSecondsRemaining.store(0);
     assignedColor.store(PieceColor::White);
     nextSequence.store(1);
 
-    connection.connectTo(ip, port);
-    connected.store(true);
-
-    Message reconnectRequest;
-    reconnectRequest.type =
-        MessageType::ReconnectRequest;
-
-    {
-        std::lock_guard<std::mutex> lock(
-            incomingMutex
+    if (!connectWithSavedToken()) {
+        throw std::runtime_error(
+            getConnectionError()
         );
-        reconnectRequest.reconnectToken =
-            reconnectToken;
     }
-
-    connection.sendMessage(
-        Protocol::serialize(
-            reconnectRequest
-        )
-    );
 
     receiverThread =
         std::thread(
@@ -97,155 +86,291 @@ void GameClient::connectTo(
         );
 }
 
-// Continuously receives responses and updates from the server.
-void GameClient::receiveLoop() {
-    try {
-        while (connected.load()) {
-            const std::string json =
-                connection.receiveMessage();
+// Opens one connection and sends the saved token.
+bool GameClient::connectWithSavedToken() {
+    std::string ip;
+    unsigned short port = 0;
+    std::string token;
 
-            if (json.empty()) {
-                {
-                    std::lock_guard<std::mutex> lock(
-                        incomingMutex
-                    );
+    {
+        std::lock_guard<std::mutex> lock(
+            incomingMutex
+        );
 
-                    connectionError =
-                        "Server disconnected";
-                }
-
-                connected.store(false);
-                incomingCondition.notify_all();
-                return;
-            }
-
-            const Message message =
-                Protocol::deserialize(json);
-
-            // Player assignment is handled separately
-            // and is not inserted into the message queue.
-            if (
-                message.type ==
-                MessageType::PlayerAssigned
-            ) {
-                if (
-                    message.playerColor ==
-                    "white"
-                ) {
-                    assignedColor.store(
-                        PieceColor::White
-                    );
-                }
-                else if (
-                    message.playerColor ==
-                    "black"
-                ) {
-                    assignedColor.store(
-                        PieceColor::Black
-                    );
-                }
-                else {
-                    throw std::runtime_error(
-                        "Server assigned an invalid player color"
-                    );
-                }
-
-                playerAssigned.store(true);
-
-                {
-                    std::lock_guard<std::mutex> lock(
-                        incomingMutex
-                    );
-                    reconnectToken =
-                        message.reconnectToken;
-                }
-
-                incomingCondition.notify_all();
-                continue;
-            }
-
-            if (
-                message.type ==
-                MessageType::WaitingForOpponent
-            ) {
-                gameStarted.store(false);
-                reconnecting.store(false);
-                reconnectSecondsRemaining.store(0);
-            }
-            else if (
-                message.type ==
-                MessageType::GameStarted
-            ) {
-                gameStarted.store(true);
-                reconnecting.store(false);
-                reconnectSecondsRemaining.store(0);
-            }
-            else if (
-                message.type ==
-                MessageType::GameFull
-            ) {
-                gameStarted.store(false);
-                gameFull.store(true);
-            }
-            else if (
-                message.type ==
-                MessageType::Reconnecting
-            ) {
-                gameStarted.store(false);
-                reconnecting.store(true);
-                reconnectSecondsRemaining.store(
-                    message.secondsRemaining
-                );
-            }
-            else if (
-                message.type ==
-                MessageType::GameClosed
-            ) {
-                gameStarted.store(false);
-                reconnecting.store(false);
-                gameClosed.store(true);
-                reconnectSecondsRemaining.store(0);
-            }
-
-            {
-                std::lock_guard<std::mutex> lock(
-                    incomingMutex
-                );
-
-                incomingMessages.push_back(
-                    message
-                );
-            }
-
-            incomingCondition.notify_all();
-        }
+        ip = serverIp;
+        port = serverPort;
+        token = reconnectToken;
     }
-    catch (const std::exception& exception) {
+
+    try {
+        TcpConnection candidate;
+        candidate.connectTo(ip, port);
+
+        Message reconnectRequest;
+        reconnectRequest.type =
+            MessageType::ReconnectRequest;
+        reconnectRequest.reconnectToken = token;
+
+        candidate.sendMessage(
+            Protocol::serialize(
+                reconnectRequest
+            )
+        );
+
+        if (stopRequested.load()) {
+            return false;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(
+                sendingMutex
+            );
+
+            connection = std::move(candidate);
+            connected.store(true);
+        }
+
         {
             std::lock_guard<std::mutex> lock(
                 incomingMutex
             );
-
-            // Preserve an intentional disconnect.
-            if (connected.load()) {
-                connectionError =
-                    exception.what();
-            }
+            connectionError.clear();
         }
 
-        connected.store(false);
         incomingCondition.notify_all();
+        return true;
+    }
+    catch (const std::exception& exception) {
+        std::lock_guard<std::mutex> lock(
+            incomingMutex
+        );
+        connectionError = exception.what();
+        return false;
     }
 }
 
-// Disconnects from the server and stops the receiving thread.
-void GameClient::disconnect() {
+// Marks a recoverable connection loss.
+void GameClient::markConnectionLost(
+    const std::string& error
+) {
     connected.store(false);
+    gameStarted.store(false);
 
-    // Closing the socket releases receiveMessage()
-    // if it is currently waiting for data.
-    connection.close();
+    if (
+        playerAssigned.load() &&
+        !gameFull.load() &&
+        !gameClosed.load() &&
+        !stopRequested.load()
+    ) {
+        tryingToReconnect.store(true);
+    }
 
+    {
+        std::lock_guard<std::mutex> lock(
+            incomingMutex
+        );
+        connectionError = error;
+    }
+
+    incomingCondition.notify_all();
+}
+
+// Waits about one second without blocking the UI thread.
+bool GameClient::waitForReconnectAttempt() {
+    std::unique_lock<std::mutex> lock(
+        incomingMutex
+    );
+
+    const auto deadline =
+        std::chrono::steady_clock::now() +
+        std::chrono::seconds(1);
+
+    incomingCondition.wait_until(
+        lock,
+        deadline,
+        [this]() {
+            return stopRequested.load();
+        }
+    );
+
+    return !stopRequested.load();
+}
+
+// Continuously receives responses and updates from the server.
+void GameClient::receiveLoop() {
+    while (!stopRequested.load()) {
+        try {
+            while (
+                connected.load() &&
+                !stopRequested.load()
+            ) {
+                if (
+                    !connection.waitForIncomingData(
+                        100
+                    )
+                ) {
+                    continue;
+                }
+
+                const std::string json =
+                    connection.receiveMessage();
+
+                if (json.empty()) {
+                    markConnectionLost(
+                        "Server disconnected"
+                    );
+                    break;
+                }
+
+                const Message message =
+                    Protocol::deserialize(json);
+
+                // Player assignment is handled separately
+                // and is not inserted into the message queue.
+                if (
+                    message.type ==
+                    MessageType::PlayerAssigned
+                ) {
+                    if (
+                        message.playerColor ==
+                        "white"
+                    ) {
+                        assignedColor.store(
+                            PieceColor::White
+                        );
+                    }
+                    else if (
+                        message.playerColor ==
+                        "black"
+                    ) {
+                        assignedColor.store(
+                            PieceColor::Black
+                        );
+                    }
+                    else {
+                        throw std::runtime_error(
+                            "Server assigned an invalid player color"
+                        );
+                    }
+
+                    playerAssigned.store(true);
+
+                    {
+                        std::lock_guard<std::mutex> lock(
+                            incomingMutex
+                        );
+                        reconnectToken =
+                            message.reconnectToken;
+                    }
+
+                    incomingCondition.notify_all();
+                    continue;
+                }
+
+                if (
+                    message.type ==
+                    MessageType::WaitingForOpponent
+                ) {
+                    gameStarted.store(false);
+                    reconnecting.store(false);
+                    tryingToReconnect.store(false);
+                    reconnectSecondsRemaining.store(0);
+                }
+                else if (
+                    message.type ==
+                    MessageType::GameStarted
+                ) {
+                    gameStarted.store(true);
+                    reconnecting.store(false);
+                    tryingToReconnect.store(false);
+                    reconnectSecondsRemaining.store(0);
+                }
+                else if (
+                    message.type ==
+                    MessageType::GameFull
+                ) {
+                    gameStarted.store(false);
+                    tryingToReconnect.store(false);
+                    gameFull.store(true);
+                }
+                else if (
+                    message.type ==
+                    MessageType::Reconnecting
+                ) {
+                    gameStarted.store(false);
+                    reconnecting.store(true);
+                    reconnectSecondsRemaining.store(
+                        message.secondsRemaining
+                    );
+                }
+                else if (
+                    message.type ==
+                    MessageType::GameClosed
+                ) {
+                    gameStarted.store(false);
+                    reconnecting.store(false);
+                    tryingToReconnect.store(false);
+                    gameClosed.store(true);
+                    reconnectSecondsRemaining.store(0);
+                }
+
+                {
+                    std::lock_guard<std::mutex> lock(
+                        incomingMutex
+                    );
+
+                    incomingMessages.push_back(
+                        message
+                    );
+                }
+
+                incomingCondition.notify_all();
+            }
+        }
+        catch (const std::exception& exception) {
+            if (!stopRequested.load()) {
+                markConnectionLost(
+                    exception.what()
+                );
+            }
+        }
+
+        if (
+            stopRequested.load() ||
+            gameFull.load() ||
+            gameClosed.load() ||
+            !playerAssigned.load()
+        ) {
+            break;
+        }
+
+        tryingToReconnect.store(true);
+
+        while (
+            !stopRequested.load() &&
+            !gameClosed.load() &&
+            !gameFull.load() &&
+            !connected.load()
+        ) {
+            if (!waitForReconnectAttempt()) {
+                break;
+            }
+
+            if (connectWithSavedToken()) {
+                break;
+            }
+        }
+    }
+
+    connected.store(false);
+    incomingCondition.notify_all();
+}
+
+// Disconnects from the server and stops the receiver thread.
+void GameClient::disconnect() {
+    stopRequested.store(true);
+    tryingToReconnect.store(false);
+    gameStarted.store(false);
     incomingCondition.notify_all();
 
     if (
@@ -254,6 +379,15 @@ void GameClient::disconnect() {
             std::this_thread::get_id()
     ) {
         receiverThread.join();
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(
+            sendingMutex
+        );
+
+        connected.store(false);
+        connection.close();
     }
 }
 
@@ -289,6 +423,11 @@ bool GameClient::isGameFull() const {
 // Returns whether the opponent may reconnect.
 bool GameClient::isReconnecting() const {
     return reconnecting.load();
+}
+
+// Returns whether this client is restoring its own connection.
+bool GameClient::isTryingToReconnect() const {
+    return tryingToReconnect.load();
 }
 
 // Returns whether the reconnection window expired.
@@ -337,8 +476,9 @@ void GameClient::send(
         connection.sendMessage(json);
     }
     catch (...) {
-        connected.store(false);
-        incomingCondition.notify_all();
+        markConnectionLost(
+            "TcpConnection: send failed"
+        );
         throw;
     }
 }
