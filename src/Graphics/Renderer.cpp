@@ -1,5 +1,6 @@
 #include "../../include/Graphics/Renderer.hpp"
 #include "../../include/Graphics/GraphicsHelper.hpp"
+#include "../../include/Client/PlayerDisplay.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -48,8 +49,11 @@ void Renderer::render(
     const std::vector<MoveHistoryEntry>& blackMoves,
     const std::vector<MoveHistoryEntry>& whiteMoves,
     const std::string& localPlayerColor,
+    const std::string& whiteUsername,
+    const std::string& blackUsername,
     const std::string& statusLine1,
-    const std::string& statusLine2
+    const std::string& statusLine2,
+    RenderOverlayMode overlayMode
 ) {
     const cv::Mat board = loadBoardImage();
     if (board.empty()) {
@@ -66,22 +70,25 @@ void Renderer::render(
         localPlayerColor == "black";
     const bool localIsWhite =
         localPlayerColor == "white";
+    const PlayerScoreDisplay scoreDisplay =
+        buildPlayerScoreDisplay(
+            whiteUsername,
+            blackUsername,
+            whiteScore,
+            blackScore
+        );
 
     drawScore(
         canvas,
-        localIsBlack
-            ? "Your score"
-            : "Opponent score",
-        blackScore,
+        scoreDisplay.topName,
+        scoreDisplay.topScore,
         0,
         localIsBlack
     );
     drawScore(
         canvas,
-        localIsWhite
-            ? "Your score"
-            : "Opponent score",
-        whiteScore,
+        scoreDisplay.bottomName,
+        scoreDisplay.bottomScore,
         SCORE_PANEL_HEIGHT +
             boardDisplaySize,
         localIsWhite
@@ -93,11 +100,11 @@ void Renderer::render(
     if (gameOver) {
         drawGameOver(canvas);
     }
-    drawPlayerBanner(
+    drawOverlay(
         canvas,
-        localPlayerColor,
         statusLine1,
-        statusLine2
+        statusLine2,
+        overlayMode
     );
     cv::imshow(windowName, canvas);
 }
@@ -140,110 +147,183 @@ void Renderer::drawScore(
                 cv::Scalar(35, 35, 35), 2, cv::LINE_AA);
 }
 
-// Draws the local color and the current connection state.
-void Renderer::drawPlayerBanner(
+// Draws a phase-specific overlay inside the playable board.
+void Renderer::drawOverlay(
     cv::Mat& canvas,
-    const std::string& localPlayerColor,
     const std::string& statusLine1,
-    const std::string& statusLine2
+    const std::string& statusLine2,
+    RenderOverlayMode overlayMode
 ) {
-    if (localPlayerColor.empty()) {
+    if (
+        statusLine1.empty() ||
+        overlayMode == RenderOverlayMode::None
+    ) {
         return;
     }
 
-    const std::string playerTitle =
-        localPlayerColor == "black"
-            ? "YOU ARE BLACK"
-            : "YOU ARE WHITE";
-
-    const bool hasStatus =
-        !statusLine1.empty();
-    const int bannerHeight =
-        hasStatus
-            ? (statusLine2.empty() ? 100 : 130)
-            : 48;
-    const int bannerWidth =
-        hasStatus ? 520 : 250;
-    const int x =
-        SIDE_PANEL_WIDTH +
-        (boardDisplaySize - bannerWidth) / 2;
-    const int y =
-        SCORE_PANEL_HEIGHT + 10;
-    const cv::Rect area(
-        x,
-        y,
-        bannerWidth,
-        bannerHeight
+    const cv::Rect boardArea(
+        SIDE_PANEL_WIDTH,
+        SCORE_PANEL_HEIGHT,
+        boardDisplaySize,
+        boardDisplaySize
     );
 
-    cv::rectangle(
-        canvas,
-        area,
-        cv::Scalar(245, 245, 245),
-        cv::FILLED
-    );
-    cv::rectangle(
-        canvas,
-        area,
-        cv::Scalar(0, 120, 215),
-        4
-    );
+    if (overlayMode == RenderOverlayMode::Countdown) {
+        cv::Mat dimmed =
+            canvas(boardArea).clone();
+        dimmed.setTo(cv::Scalar(20, 20, 20));
+        cv::addWeighted(
+            dimmed,
+            0.34,
+            canvas(boardArea),
+            0.66,
+            0.0,
+            canvas(boardArea)
+        );
+    }
+
+    double scale = 1.0;
+    int thickness = 3;
+    if (overlayMode == RenderOverlayMode::Countdown) {
+        int unitBaseline = 0;
+        const cv::Size unitSize =
+            cv::getTextSize(
+                statusLine1,
+                cv::FONT_HERSHEY_DUPLEX,
+                1.0,
+                thickness,
+                &unitBaseline
+            );
+        const double heightRatio =
+            statusLine1 == "GO!" ? 0.25 : 0.31;
+        scale =
+            boardDisplaySize * heightRatio /
+            std::max(1, unitSize.height);
+        thickness = std::max(
+            5,
+            static_cast<int>(scale * 2.0)
+        );
+    }
+    else if (overlayMode == RenderOverlayMode::Waiting) {
+        thickness = 3;
+        int unitBaseline = 0;
+        const cv::Size unitSize =
+            cv::getTextSize(
+                statusLine1,
+                cv::FONT_HERSHEY_DUPLEX,
+                1.0,
+                thickness,
+                &unitBaseline
+            );
+        scale = std::min(
+            1.45,
+            boardDisplaySize * 0.78 /
+                std::max(1, unitSize.width)
+        );
+    }
+    else {
+        scale = 0.75;
+        thickness = 2;
+    }
+
+    int baseline = 0;
+    const cv::Size primarySize =
+        cv::getTextSize(
+            statusLine1,
+            cv::FONT_HERSHEY_DUPLEX,
+            scale,
+            thickness,
+            &baseline
+        );
+
+    if (overlayMode == RenderOverlayMode::Waiting) {
+        const int paddingX =
+            std::max(28, boardDisplaySize / 24);
+        const int paddingY =
+            std::max(24, boardDisplaySize / 28);
+        const int textHeight =
+            primarySize.height + baseline;
+        const cv::Rect panel(
+            boardArea.x +
+                (boardArea.width -
+                    primarySize.width -
+                    2 * paddingX) / 2,
+            boardArea.y +
+                (boardArea.height -
+                    textHeight -
+                    2 * paddingY) / 2,
+            primarySize.width + 2 * paddingX,
+            textHeight + 2 * paddingY
+        );
+        cv::Mat darkPanel =
+            canvas(panel).clone();
+        darkPanel.setTo(cv::Scalar(20, 20, 20));
+        cv::addWeighted(
+            darkPanel,
+            0.72,
+            canvas(panel),
+            0.28,
+            0.0,
+            canvas(panel)
+        );
+    }
 
     const auto drawCenteredText =
-        [&canvas, &area](
+        [this, &canvas, &boardArea](
             const std::string& text,
-            int baselineY,
-            double scale,
-            int thickness
+            int centerY,
+            double textScale,
+            int textThickness,
+            const cv::Scalar& color
         ) {
             int baseline = 0;
             const cv::Size size =
                 cv::getTextSize(
                     text,
                     cv::FONT_HERSHEY_DUPLEX,
-                    scale,
-                    thickness,
+                    textScale,
+                    textThickness,
                     &baseline
                 );
 
+            const cv::Point origin(
+                boardArea.x +
+                    (boardArea.width - size.width) / 2,
+                centerY +
+                    (size.height - baseline) / 2
+            );
             cv::putText(
-                canvas,
-                text,
-                cv::Point(
-                    area.x +
-                        (area.width - size.width) / 2,
-                    area.y + baselineY
-                ),
-                cv::FONT_HERSHEY_DUPLEX,
-                scale,
-                cv::Scalar(25, 25, 25),
-                thickness,
-                cv::LINE_AA
+                canvas, text, origin,
+                cv::FONT_HERSHEY_DUPLEX, textScale,
+                cv::Scalar(15, 15, 15),
+                textThickness + 6, cv::LINE_AA
+            );
+            cv::putText(
+                canvas, text, origin,
+                cv::FONT_HERSHEY_DUPLEX, textScale,
+                color,
+                textThickness, cv::LINE_AA
             );
         };
 
     drawCenteredText(
-        playerTitle,
-        32,
-        0.8,
-        2
+        statusLine1,
+        boardArea.y + boardArea.height / 2,
+        scale,
+        thickness,
+        overlayMode == RenderOverlayMode::Countdown
+            ? cv::Scalar(170, 225, 255)
+            : cv::Scalar(255, 255, 255)
     );
-
-    if (hasStatus) {
-        drawCenteredText(
-            statusLine1,
-            70,
-            0.75,
-            2
-        );
-    }
 
     if (!statusLine2.empty()) {
         drawCenteredText(
             statusLine2,
-            108,
+            boardArea.y +
+                boardArea.height / 2 + 58,
             0.72,
-            2
+            2,
+            cv::Scalar(255, 255, 255)
         );
     }
 }

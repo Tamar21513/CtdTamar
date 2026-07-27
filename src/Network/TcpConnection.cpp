@@ -127,6 +127,14 @@ void TcpConnection::sendMessage(
         );
     }
 
+    constexpr std::size_t MAX_MESSAGE_BYTES =
+        1024 * 1024;
+    if (json.size() > MAX_MESSAGE_BYTES) {
+        throw std::length_error(
+            "TcpConnection: message is too large"
+        );
+    }
+
     sendAll(json + "\n");
 }
 
@@ -166,6 +174,14 @@ std::string TcpConnection::receiveMessage() {
         }
 
         message.push_back(currentCharacter);
+
+        constexpr std::size_t MAX_MESSAGE_BYTES =
+            1024 * 1024;
+        if (message.size() > MAX_MESSAGE_BYTES) {
+            throw std::length_error(
+                "TcpConnection: message is too large"
+            );
+        }
     }
 
     return message;

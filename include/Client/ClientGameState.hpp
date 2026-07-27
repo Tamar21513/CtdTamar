@@ -3,10 +3,13 @@
 
 #include "../Messaging/Message.hpp"
 
+#include <mutex>
+
 // Stores the latest authoritative snapshot received
 // from the game server.
 class ClientGameState {
 private:
+    mutable std::mutex snapshotMutex;
     GameStateSnapshot currentSnapshot;
     bool initialized;
 
@@ -19,8 +22,7 @@ public:
 
     bool hasSnapshot() const;
 
-    const GameStateSnapshot&
-    getSnapshot() const;
+    GameStateSnapshot copySnapshot() const;
 
     const PieceSnapshot*
     findPieceById(int pieceId) const;
@@ -34,6 +36,8 @@ public:
 
     int getWhiteScore() const;
     int getBlackScore() const;
+    std::string getWhiteUsername() const;
+    std::string getBlackUsername() const;
 
     long long getServerTimeMs() const;
 };

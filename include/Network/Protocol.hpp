@@ -6,7 +6,7 @@
 #include "../Messaging/Message.hpp"
 
 namespace Protocol {
-    constexpr int VERSION = 4;
+    constexpr int VERSION = 5;
 
     std::string messageTypeToString(MessageType type);
     MessageType messageTypeFromString(const std::string& value);

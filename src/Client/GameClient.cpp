@@ -13,6 +13,7 @@ GameClient::GameClient()
       connected(false),
       playerAssigned(false),
       gameStarted(false),
+      gameEverStarted(false),
       gameFull(false),
       reconnecting(false),
       tryingToReconnect(false),
@@ -25,6 +26,9 @@ GameClient::GameClient()
       incomingMessages(),
       connectionError(),
       reconnectToken(),
+      username(),
+      whiteUsername(),
+      blackUsername(),
       serverIp(),
       serverPort(0) {
     const char* token =
@@ -43,7 +47,8 @@ GameClient::~GameClient() {
 // Connects to the server and starts the receiving thread.
 void GameClient::connectTo(
     const std::string& ip,
-    unsigned short port
+    unsigned short port,
+    const std::string& username
 ) {
     if (connected.load()) {
         throw std::runtime_error(
@@ -60,11 +65,15 @@ void GameClient::connectTo(
         connectionError.clear();
         serverIp = ip;
         serverPort = port;
+        this->username = username;
+        whiteUsername.clear();
+        blackUsername.clear();
     }
 
     stopRequested.store(false);
     playerAssigned.store(false);
     gameStarted.store(false);
+    gameEverStarted.store(false);
     gameFull.store(false);
     reconnecting.store(false);
     tryingToReconnect.store(false);
@@ -110,6 +119,7 @@ bool GameClient::connectWithSavedToken() {
         reconnectRequest.type =
             MessageType::ReconnectRequest;
         reconnectRequest.reconnectToken = token;
+        reconnectRequest.username = username;
 
         candidate.sendMessage(
             Protocol::serialize(
@@ -154,7 +164,6 @@ void GameClient::markConnectionLost(
     const std::string& error
 ) {
     connected.store(false);
-    gameStarted.store(false);
 
     if (
         playerAssigned.load() &&
@@ -225,6 +234,39 @@ void GameClient::receiveLoop() {
                 const Message message =
                     Protocol::deserialize(json);
 
+                {
+                    std::lock_guard<std::mutex> lock(
+                        incomingMutex
+                    );
+                    if (message.hasSnapshot) {
+                        if (
+                            !message.snapshot
+                                .whiteUsername.empty()
+                        ) {
+                            whiteUsername =
+                                message.snapshot.whiteUsername;
+                        }
+                        if (
+                            !message.snapshot
+                                .blackUsername.empty()
+                        ) {
+                            blackUsername =
+                                message.snapshot.blackUsername;
+                        }
+                    }
+                    else if (
+                        message.type ==
+                            MessageType::PlayerAssigned ||
+                        message.type ==
+                            MessageType::GameStarted
+                    ) {
+                        whiteUsername =
+                            message.whiteUsername;
+                        blackUsername =
+                            message.blackUsername;
+                    }
+                }
+
                 // Player assignment is handled separately
                 // and is not inserted into the message queue.
                 if (
@@ -261,6 +303,7 @@ void GameClient::receiveLoop() {
                         );
                         reconnectToken =
                             message.reconnectToken;
+                        username = message.username;
                     }
 
                     incomingCondition.notify_all();
@@ -271,7 +314,9 @@ void GameClient::receiveLoop() {
                     message.type ==
                     MessageType::WaitingForOpponent
                 ) {
-                    gameStarted.store(false);
+                    if (!gameEverStarted.load()) {
+                        gameStarted.store(false);
+                    }
                     reconnecting.store(false);
                     tryingToReconnect.store(false);
                     reconnectSecondsRemaining.store(0);
@@ -281,6 +326,7 @@ void GameClient::receiveLoop() {
                     MessageType::GameStarted
                 ) {
                     gameStarted.store(true);
+                    gameEverStarted.store(true);
                     reconnecting.store(false);
                     tryingToReconnect.store(false);
                     reconnectSecondsRemaining.store(0);
@@ -297,7 +343,6 @@ void GameClient::receiveLoop() {
                     message.type ==
                     MessageType::Reconnecting
                 ) {
-                    gameStarted.store(false);
                     reconnecting.store(true);
                     reconnectSecondsRemaining.store(
                         message.secondsRemaining
@@ -448,6 +493,21 @@ std::string GameClient::getReconnectToken() const {
     );
 
     return reconnectToken;
+}
+
+std::string GameClient::getUsername() const {
+    std::lock_guard<std::mutex> lock(incomingMutex);
+    return username;
+}
+
+std::string GameClient::getWhiteUsername() const {
+    std::lock_guard<std::mutex> lock(incomingMutex);
+    return whiteUsername;
+}
+
+std::string GameClient::getBlackUsername() const {
+    std::lock_guard<std::mutex> lock(incomingMutex);
+    return blackUsername;
 }
 
 // Creates a unique sequence number for a request.

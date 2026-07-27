@@ -75,6 +75,10 @@ struct GameStateSnapshot {
 
     int whiteScore = 0;
     int blackScore = 0;
+    std::string whiteUsername;
+    std::string blackUsername;
+    bool playersReady = false;
+    long long gameplayStartsAtEpochMs = 0;
 
     std::vector<PieceSnapshot> pieces;
     std::vector<MotionSnapshot> motions;

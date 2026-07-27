@@ -20,6 +20,13 @@ struct VisualPiece {
     bool alignVisibleCenter = false;
 };
 
+enum class RenderOverlayMode {
+    None,
+    Status,
+    Waiting,
+    Countdown
+};
+
 class Renderer {
 public:
     static const int SIDE_PANEL_WIDTH = 250;
@@ -36,8 +43,12 @@ public:
         const std::vector<MoveHistoryEntry>& blackMoves = {},
         const std::vector<MoveHistoryEntry>& whiteMoves = {},
         const std::string& localPlayerColor = "",
+        const std::string& whiteUsername = "",
+        const std::string& blackUsername = "",
         const std::string& statusLine1 = "",
-        const std::string& statusLine2 = ""
+        const std::string& statusLine2 = "",
+        RenderOverlayMode overlayMode =
+            RenderOverlayMode::Status
     );
 
     cv::Mat cropTransparentMargins(const cv::Mat& sprite) const;
@@ -64,11 +75,11 @@ private:
     void drawSleepZ(cv::Mat& board, int x, int y, VisualState state);
     void drawGameOver(cv::Mat& board);
     void drawScore(cv::Mat& canvas, const std::string& label, int score, int y, bool localPlayer);
-    void drawPlayerBanner(
+    void drawOverlay(
         cv::Mat& canvas,
-        const std::string& localPlayerColor,
         const std::string& statusLine1,
-        const std::string& statusLine2
+        const std::string& statusLine2,
+        RenderOverlayMode overlayMode
     );
     void drawMoveHistory(cv::Mat& canvas, const std::vector<MoveHistoryEntry>& moves,
         const std::string& title, int x, int y, int width, int height);

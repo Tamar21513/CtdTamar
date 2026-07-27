@@ -12,6 +12,7 @@ class ClientSession {
 private:
     int clientId;
     PieceColor assignedColor;
+    std::string username;
 
     TcpConnection connection;
 
@@ -27,6 +28,7 @@ public:
     ClientSession(
         int clientId,
         PieceColor assignedColor,
+        std::string username,
         TcpConnection connection
     );
 
@@ -41,6 +43,7 @@ public:
     int getClientId() const;
 
     PieceColor getAssignedColor() const;
+    const std::string& getUsername() const;
 
     bool isConnected() const;
 

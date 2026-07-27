@@ -3,6 +3,8 @@
 
 #include "../../include/Client/ClientApp.hpp"
 #include "../../include/Client/GameClient.hpp"
+#include "../../include/Client/GameStartState.hpp"
+#include "../../include/Client/Username.hpp"
 #include "../../include/Client/ClientGameState.hpp"
 #include "../../include/Client/NetworkController.hpp"
 #include "../../include/Core/Piece.hpp"
@@ -99,10 +101,24 @@ void waitForReadyGame(
             gameState.applyMessage(update);
         }
 
+        const GameStateSnapshot snapshot =
+            gameState.copySnapshot();
+
         if (
             client.hasPlayerAssignment() &&
             client.hasGameStarted() &&
-            gameState.hasSnapshot()
+            gameState.hasSnapshot() &&
+            buildGameStartDisplay(
+                snapshot.playersReady,
+                snapshot.gameplayStartsAtEpochMs,
+                std::chrono::duration_cast<
+                    std::chrono::milliseconds
+                >(
+                    std::chrono::system_clock::now()
+                        .time_since_epoch()
+                ).count()
+            ).phase ==
+                ClientUiPhase::Playing
         ) {
             return;
         }
@@ -141,11 +157,14 @@ void ClientApp::run(
 ) {
     SocketEnvironment sockets;
     GameClient client;
+    const std::string username =
+        Username::prompt(std::cin, std::cout);
 
     try {
         client.connectTo(
             serverHost,
-            serverPort
+            serverPort,
+            username
         );
     }
     catch (...) {
@@ -162,6 +181,18 @@ void ClientApp::run(
 
     ClientGameState gameState;
     waitForReadyGame(client, gameState);
+
+    std::cout
+        << "Assigned player: "
+        << client.getUsername()
+        << " ("
+        << (
+            client.getAssignedColor() ==
+                    PieceColor::White
+                ? "white"
+                : "black"
+        )
+        << ")\n";
 
     const bool isWhite =
         client.getAssignedColor() ==
@@ -188,7 +219,7 @@ void ClientApp::run(
     printResponse(1, firstResponse);
 
     if (
-        gameState.getSnapshot().pieces.size()
+        gameState.copySnapshot().pieces.size()
         != 32
     ) {
         throw std::runtime_error(
@@ -198,7 +229,7 @@ void ClientApp::run(
 
     std::cout
         << "Initial snapshot received: "
-        << gameState.getSnapshot().pieces.size()
+        << gameState.copySnapshot().pieces.size()
         << " pieces\n";
 
     if (!gameState.applyMessage(firstResponse)) {

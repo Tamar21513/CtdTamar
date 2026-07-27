@@ -20,6 +20,7 @@ private:
     std::atomic<bool> connected;
     std::atomic<bool> playerAssigned;
     std::atomic<bool> gameStarted;
+    std::atomic<bool> gameEverStarted;
     std::atomic<bool> gameFull;
     std::atomic<bool> reconnecting;
     std::atomic<bool> tryingToReconnect;
@@ -38,6 +39,9 @@ private:
     std::deque<Message> incomingMessages;
     std::string connectionError;
     std::string reconnectToken;
+    std::string username;
+    std::string whiteUsername;
+    std::string blackUsername;
     std::string serverIp;
     unsigned short serverPort;
 
@@ -74,7 +78,8 @@ public:
     // Connects to the server and starts continuous reception.
     void connectTo(
         const std::string& ip,
-        unsigned short port
+        unsigned short port,
+        const std::string& username = "Player"
     );
 
     // Disconnects and stops the receiver thread.
@@ -109,6 +114,9 @@ public:
 
     // Returns the token needed to reclaim this player's color.
     std::string getReconnectToken() const;
+    std::string getUsername() const;
+    std::string getWhiteUsername() const;
+    std::string getBlackUsername() const;
 
     // Generates a sequence number for a new request.
     unsigned long long createSequence();

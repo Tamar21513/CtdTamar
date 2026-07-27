@@ -9,6 +9,7 @@ CXX="${CXX:-g++}"
   tests/doctest/test_board_parser_mapper.cpp tests/doctest/test_rules.cpp \
   tests/doctest/test_engine_controller.cpp tests/doctest/test_realtime_arbiter.cpp \
   tests/doctest/test_event_bus.cpp \
+  tests/doctest/test_username.cpp \
   src/Core/Position.cpp src/Core/Piece.cpp src/Core/Board.cpp \
   src/IO/BoardParser.cpp src/IO/BoardPrinter.cpp src/IO/BoardMapper.cpp \
   src/Rules/PieceRules.cpp src/Rules/RuleEngine.cpp \
@@ -16,5 +17,7 @@ CXX="${CXX:-g++}"
   src/Realtime/RealTimeArbiter.cpp src/Messaging/EventBus.cpp \
   src/Messaging/GameEventSubscribers.cpp \
   src/Messaging/MessageBus.cpp src/Messaging/EngineMessageHandler.cpp \
-  src/Messaging/GameStateSnapshotBuilder.cpp -o doctest_tests
+  src/Messaging/GameStateSnapshotBuilder.cpp src/Network/Protocol.cpp \
+  src/Client/ClientGameState.cpp \
+  -o doctest_tests
 ./doctest_tests

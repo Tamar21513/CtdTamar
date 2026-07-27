@@ -15,6 +15,7 @@ enum class MessageType {
     WaitingForOpponent,
     GameStarted,
     GameFull,
+    InvalidUsername,
     ReconnectRequest,
     Reconnecting,
     GameClosed,
@@ -34,6 +35,9 @@ struct Message {
     std::string reason;
     std::string playerColor;
     std::string reconnectToken;
+    std::string username;
+    std::string whiteUsername;
+    std::string blackUsername;
     int secondsRemaining = 0;
 
     long long createdAtMs = 0;

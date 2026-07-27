@@ -664,6 +664,16 @@ void writeSnapshot(
         << snapshot.whiteScore
         << ",\"blackScore\":"
         << snapshot.blackScore
+        << ",\"whiteUsername\":\""
+        << escapeJson(snapshot.whiteUsername)
+        << "\""
+        << ",\"blackUsername\":\""
+        << escapeJson(snapshot.blackUsername)
+        << "\""
+        << ",\"playersReady\":"
+        << (snapshot.playersReady ? "true" : "false")
+        << ",\"gameplayStartsAtEpochMs\":"
+        << snapshot.gameplayStartsAtEpochMs
         << ",\"pieces\":";
 
     writeArray(output, snapshot.pieces, writePiece);
@@ -895,10 +905,25 @@ GameStateSnapshot readSnapshot(
     snapshot.gameOver = readBool(object, "gameOver");
     snapshot.whiteScore = readInt(object, "whiteScore");
     snapshot.blackScore = readInt(object, "blackScore");
+    snapshot.whiteUsername =
+        readString(object, "whiteUsername");
+    snapshot.blackUsername =
+        readString(object, "blackUsername");
+    snapshot.playersReady =
+        readBool(object, "playersReady");
+    snapshot.gameplayStartsAtEpochMs =
+        readSigned(
+            object,
+            "gameplayStartsAtEpochMs"
+        );
 
     requireNonNegative(
         snapshot.serverTimeMs,
         "serverTimeMs"
+    );
+    requireNonNegative(
+        snapshot.gameplayStartsAtEpochMs,
+        "gameplayStartsAtEpochMs"
     );
 
     if (
@@ -987,6 +1012,8 @@ std::string Protocol::messageTypeToString(
 
         case MessageType::GameFull:
             return "game_full";
+        case MessageType::InvalidUsername:
+            return "invalid_username";
 
         case MessageType::ReconnectRequest:
             return "reconnect_request";
@@ -1042,6 +1069,9 @@ MessageType Protocol::messageTypeFromString(
 
     if (value == "game_full") {
         return MessageType::GameFull;
+    }
+    if (value == "invalid_username") {
+        return MessageType::InvalidUsername;
     }
 
     if (value == "reconnect_request") {
@@ -1100,6 +1130,15 @@ std::string Protocol::serialize(
         << ",\"reconnectToken\":\""
         << escapeJson(message.reconnectToken)
         << "\""
+        << ",\"username\":\""
+        << escapeJson(message.username)
+        << "\""
+        << ",\"whiteUsername\":\""
+        << escapeJson(message.whiteUsername)
+        << "\""
+        << ",\"blackUsername\":\""
+        << escapeJson(message.blackUsername)
+        << "\""
         << ",\"secondsRemaining\":"
         << message.secondsRemaining
         << ",\"createdAtMs\":"
@@ -1152,6 +1191,11 @@ Message Protocol::deserialize(
     message.playerColor = readString(json, "playerColor");
     message.reconnectToken =
         readString(json, "reconnectToken");
+    message.username = readString(json, "username");
+    message.whiteUsername =
+        readString(json, "whiteUsername");
+    message.blackUsername =
+        readString(json, "blackUsername");
     message.secondsRemaining =
         readInt(json, "secondsRemaining");
     message.createdAtMs = readSigned(json, "createdAtMs");

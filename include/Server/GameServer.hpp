@@ -46,6 +46,8 @@ private:
 
     std::string whiteReconnectToken;
     std::string blackReconnectToken;
+    std::string whiteUsername;
+    std::string blackUsername;
     std::unordered_set<std::string>
         expiredReconnectTokens;
     bool gameWasStarted;
@@ -55,6 +57,8 @@ private:
     std::chrono::steady_clock::time_point
         reconnectionDeadline;
     int lastReconnectSecondsSent;
+    std::atomic<long long>
+        gameplayStartsAtEpochMs;
 
     // Creates the standard initial chess board.
     static Board createInitialBoard();
@@ -62,8 +66,12 @@ private:
     // Creates a session and assigns an available color.
     std::shared_ptr<ClientSession> createSession(
         TcpConnection connection,
-        const std::string& requestedToken
+        const std::string& requestedToken,
+        const std::string& requestedUsername
     );
+
+    GameStateSnapshot buildSnapshot();
+    bool isGameplayEnabled() const;
 
     // Handles requests from one connected client.
     void handleClient(

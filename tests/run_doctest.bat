@@ -14,6 +14,7 @@ cl /nologo /EHsc /std:c++17 /Zi /Od ^
  tests\doctest\test_board_parser_mapper.cpp tests\doctest\test_rules.cpp ^
  tests\doctest\test_engine_controller.cpp tests\doctest\test_realtime_arbiter.cpp ^
  tests\doctest\test_event_bus.cpp ^
+ tests\doctest\test_username.cpp ^
  src\Core\Position.cpp src\Core\Piece.cpp src\Core\Board.cpp ^
  src\IO\BoardParser.cpp src\IO\BoardPrinter.cpp src\IO\BoardMapper.cpp ^
  src\Rules\PieceRules.cpp src\Rules\RuleEngine.cpp ^
@@ -21,7 +22,9 @@ cl /nologo /EHsc /std:c++17 /Zi /Od ^
  src\Realtime\RealTimeArbiter.cpp src\Messaging\EventBus.cpp ^
  src\Messaging\GameEventSubscribers.cpp ^
  src\Messaging\MessageBus.cpp src\Messaging\EngineMessageHandler.cpp ^
- src\Messaging\GameStateSnapshotBuilder.cpp /Fe:doctest_tests.exe
+ src\Messaging\GameStateSnapshotBuilder.cpp src\Network\Protocol.cpp ^
+ src\Client\ClientGameState.cpp ^
+ /Fe:doctest_tests.exe
 if errorlevel 1 exit /b 1
 doctest_tests.exe
 exit /b %errorlevel%

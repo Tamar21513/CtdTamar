@@ -1,6 +1,7 @@
 #include "../../include/Server/GameServer.hpp"
 
 #include "../../include/Core/Piece.hpp"
+#include "../../include/Client/Username.hpp"
 #include "../../include/Messaging/GameStateSnapshotBuilder.hpp"
 #include "../../include/Network/Protocol.hpp"
 
@@ -33,14 +34,30 @@ GameServer::GameServer(unsigned short port)
       gameStarted(false),
       whiteReconnectToken(),
       blackReconnectToken(),
+      whiteUsername(),
+      blackUsername(),
       expiredReconnectTokens(),
       gameWasStarted(false),
       reconnectionPending(false),
       closingExpiredGame(false),
       reservedColor(PieceColor::White),
       reconnectionDeadline(),
-      lastReconnectSecondsSent(-1) {
+      lastReconnectSecondsSent(-1),
+      gameplayStartsAtEpochMs(0) {
 }
+
+namespace {
+
+long long currentEpochMs() {
+    return std::chrono::duration_cast<
+        std::chrono::milliseconds
+    >(
+        std::chrono::system_clock::now()
+            .time_since_epoch()
+    ).count();
+}
+
+} // namespace
 
 // Creates a standard chess board.
 Board GameServer::createInitialBoard() {
@@ -133,15 +150,47 @@ std::string GameServer::createReconnectToken(
     return token.str();
 }
 
+GameStateSnapshot GameServer::buildSnapshot() {
+    GameStateSnapshot snapshot =
+        GameStateSnapshotBuilder::build(engine);
+    std::lock_guard<std::mutex> lock(playersMutex);
+    snapshot.whiteUsername = whiteUsername;
+    snapshot.blackUsername = blackUsername;
+    snapshot.playersReady =
+        gameStarted.load() ||
+        (
+            gameWasStarted &&
+            whitePlayer != nullptr &&
+            whitePlayer->isConnected() &&
+            blackPlayer != nullptr &&
+            blackPlayer->isConnected()
+        );
+    snapshot.gameplayStartsAtEpochMs =
+        gameplayStartsAtEpochMs.load();
+    return snapshot;
+}
+
+bool GameServer::isGameplayEnabled() const {
+    return
+        gameStarted.load() &&
+        gameplayStartsAtEpochMs.load() > 0 &&
+        currentEpochMs() >=
+            gameplayStartsAtEpochMs.load();
+}
+
 // Creates a session and assigns an available or reserved color.
 std::shared_ptr<ClientSession>
 GameServer::createSession(
     TcpConnection connection,
-    const std::string& requestedToken
+    const std::string& requestedToken,
+    const std::string& requestedUsername
 ) {
     std::lock_guard<std::mutex> lock(
         playersMutex
     );
+
+    const std::string trimmedUsername =
+        Username::trim(requestedUsername);
 
     const int clientId =
         nextClientId.fetch_add(1);
@@ -183,12 +232,33 @@ GameServer::createSession(
         return nullptr;
     }
 
-    if (reconnectionPending) {
-        const std::string& reservedToken =
-            reservedColor == PieceColor::White
-                ? whiteReconnectToken
-                : blackReconnectToken;
+    const std::string reservedToken =
+        reservedColor == PieceColor::White
+            ? whiteReconnectToken
+            : blackReconnectToken;
+    const bool validReconnect =
+        reconnectionPending &&
+        !requestedToken.empty() &&
+        requestedToken == reservedToken;
 
+    if (
+        !validReconnect &&
+        !Username::isValid(trimmedUsername)
+    ) {
+        Message invalid;
+        invalid.type = MessageType::InvalidUsername;
+        invalid.accepted = false;
+        invalid.reason = trimmedUsername.empty()
+            ? "empty_username"
+            : "invalid_username";
+        connection.sendMessage(
+            Protocol::serialize(invalid)
+        );
+        connection.close();
+        return nullptr;
+    }
+
+    if (reconnectionPending) {
         if (
             requestedToken == reservedToken &&
             !requestedToken.empty()
@@ -197,6 +267,9 @@ GameServer::createSession(
                 std::make_shared<ClientSession>(
                     clientId,
                     reservedColor,
+                    reservedColor == PieceColor::White
+                        ? whiteUsername
+                        : blackUsername,
                     std::move(connection)
                 );
 
@@ -235,11 +308,13 @@ GameServer::createSession(
     ) {
         whiteReconnectToken =
             createReconnectToken(clientId);
+        whiteUsername = trimmedUsername;
 
         whitePlayer =
             std::make_shared<ClientSession>(
                 clientId,
                 PieceColor::White,
+                whiteUsername,
                 std::move(connection)
             );
 
@@ -260,11 +335,13 @@ GameServer::createSession(
     ) {
         blackReconnectToken =
             createReconnectToken(clientId);
+        blackUsername = trimmedUsername;
 
         blackPlayer =
             std::make_shared<ClientSession>(
                 clientId,
                 PieceColor::Black,
+                blackUsername,
                 std::move(connection)
             );
 
@@ -405,9 +482,11 @@ void GameServer::removeSession(
                     PieceColor::White
                 ) {
                     whiteReconnectToken.clear();
+                    whiteUsername.clear();
                 }
                 else {
                     blackReconnectToken.clear();
+                    blackUsername.clear();
                 }
             }
         }
@@ -551,9 +630,12 @@ void GameServer::closeExpiredGame() {
         blackPlayer.reset();
         whiteReconnectToken.clear();
         blackReconnectToken.clear();
+        whiteUsername.clear();
+        blackUsername.clear();
         gameWasStarted = false;
         closingExpiredGame = false;
         lastReconnectSecondsSent = -1;
+        gameplayStartsAtEpochMs = 0;
     }
 
     lifecyclePublisher.reset();
@@ -652,6 +734,12 @@ void GameServer::handleClient(
 
     assignment.createdAtMs = 0;
     assignment.hasSnapshot = false;
+    assignment.username = session->getUsername();
+    {
+        std::lock_guard<std::mutex> lock(playersMutex);
+        assignment.whiteUsername = whiteUsername;
+        assignment.blackUsername = blackUsername;
+    }
 
     session->sendMessage(
         Protocol::serialize(assignment)
@@ -677,9 +765,7 @@ void GameServer::handleClient(
         initialUpdate.hasSnapshot = true;
 
         initialUpdate.snapshot =
-            GameStateSnapshotBuilder::build(
-                engine
-            );
+            buildSnapshot();
     }
 
     session->sendMessage(
@@ -696,15 +782,23 @@ void GameServer::handleClient(
             gameStarted.exchange(true);
 
         if (!wasStarted) {
+            bool firstGameStart = false;
             {
                 std::lock_guard<std::mutex> lock(
                     playersMutex
                 );
+                firstGameStart = !gameWasStarted;
+                if (firstGameStart) {
+                    gameplayStartsAtEpochMs =
+                        currentEpochMs() + 4000;
+                }
                 gameWasStarted = true;
                 reconnectionPending = false;
             }
 
-            lifecyclePublisher.publishStarted();
+            if (firstGameStart) {
+                lifecyclePublisher.publishStarted();
+            }
 
             Message startedMessage;
             startedMessage.type =
@@ -712,6 +806,23 @@ void GameServer::handleClient(
             startedMessage.accepted = true;
             startedMessage.reason =
                 "game_started";
+            {
+                std::lock_guard<std::mutex> lock(
+                    playersMutex
+                );
+                startedMessage.whiteUsername =
+                    whiteUsername;
+                startedMessage.blackUsername =
+                    blackUsername;
+            }
+            {
+                std::lock_guard<std::mutex> lock(
+                    engineMutex
+                );
+                startedMessage.hasSnapshot = true;
+                startedMessage.snapshot =
+                    buildSnapshot();
+            }
 
             broadcast(
                 Protocol::serialize(
@@ -781,9 +892,7 @@ void GameServer::handleClient(
                     request.source
                 );
 
-            if (
-                !gameStarted.load()
-            ) {
+            if (!isGameplayEnabled()) {
                 response.type =
                     MessageType::MoveRejected;
                 response.sequence =
@@ -793,14 +902,14 @@ void GameServer::handleClient(
                     request.destination;
                 response.accepted = false;
                 response.reason =
-                    "waiting_for_opponent";
+                    gameStarted.load()
+                        ? "countdown_in_progress"
+                        : "waiting_for_opponent";
                 response.createdAtMs =
                     engine.getCurrentTimeMs();
                 response.hasSnapshot = true;
                 response.snapshot =
-                    GameStateSnapshotBuilder::build(
-                        engine
-                    );
+                    buildSnapshot();
             }
             else if (
                 sourcePiece != nullptr &&
@@ -829,9 +938,7 @@ void GameServer::handleClient(
                 response.hasSnapshot = true;
 
                 response.snapshot =
-                    GameStateSnapshotBuilder::build(
-                        engine
-                    );
+                    buildSnapshot();
             }
             else {
                 messageBus.sendToEngine(request);
@@ -964,9 +1071,7 @@ void GameServer::runGameLoop() {
                 stateUpdate.hasSnapshot = true;
 
                 stateUpdate.snapshot =
-                    GameStateSnapshotBuilder::build(
-                        engine
-                    );
+                    buildSnapshot();
 
                 lastStateUpdate = currentTime;
                 shouldBroadcast = true;
@@ -1034,7 +1139,8 @@ void GameServer::run() {
             std::shared_ptr<ClientSession> session =
                 createSession(
                     std::move(connection),
-                    handshake.reconnectToken
+                    handshake.reconnectToken,
+                    handshake.username
                 );
 
             if (session == nullptr) {

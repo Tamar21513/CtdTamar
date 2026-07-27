@@ -5,10 +5,12 @@
 ClientSession::ClientSession(
     int clientId,
     PieceColor assignedColor,
+    std::string username,
     TcpConnection connection
 ) :
     clientId(clientId),
     assignedColor(assignedColor),
+    username(std::move(username)),
     connection(std::move(connection)),
     connected(true) {
 }
@@ -55,4 +57,8 @@ void ClientSession::disconnect() {
     );
 
     connection.close();
+}
+
+const std::string& ClientSession::getUsername() const {
+    return username;
 }
