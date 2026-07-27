@@ -11,6 +11,8 @@
 #include "../Rules/RuleEngine.hpp"
 #include "../Messaging/Message.hpp"
 
+class EventBus;
+
 using namespace std;
 using MovingPieceInfo = Motion;
 using JumpInfo = Jump;
@@ -35,6 +37,7 @@ private:
     vector<MoveHistoryEntry> whiteMoveHistory;
     vector<MoveHistoryEntry> blackMoveHistory;
     vector<PendingCastle> pendingCastles;
+    EventBus* eventBus;
 
     bool isCastlingRequest(const Position& source, const Position& destination) const;
     bool canCastle(const Position& source, const Position& destination, PendingCastle& castle) const;
@@ -62,12 +65,21 @@ private:
         const Position& source,
         const Position& finalCell,
         long long eventTimeMs,
-        bool wasCapture
+        bool wasCapture,
+        PieceKind capturedKind = PieceKind::Pawn,
+        PieceColor capturedColor = PieceColor::Black
     );
 
     bool promotePawnIfNeeded(shared_ptr<Piece> piece, const Position& cell);
     int getPieceValue(PieceKind kind) const;
     void addCaptureScore(PieceColor attackerColor, PieceKind capturedKind);
+    void publishMoveCompleted(
+        const MoveHistoryEntry& entry,
+        bool hasCapturedPiece = false,
+        PieceKind capturedKind = PieceKind::Pawn,
+        PieceColor capturedColor = PieceColor::Black
+    );
+    void endGame(PieceColor winner, const string& reason);
     string buildMoveNotation(
         PieceKind kind,
         const Position& source,
@@ -87,7 +99,7 @@ private:
     );
 
 public:
-    explicit GameEngine(Board board);
+    explicit GameEngine(Board board, EventBus* eventBus = nullptr);
 
     MoveResult requestMove(const Position& source, const Position& destination);
     MoveResult requestJump(const Position& cell);

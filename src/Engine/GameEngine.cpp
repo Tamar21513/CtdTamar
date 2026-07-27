@@ -1,12 +1,17 @@
 #include "../../include/Engine/GameEngine.hpp"
 #include "../../include/Core/PieceConfig.hpp"
+#include "../../include/Messaging/EventBus.hpp"
 #include "../../include/Rules/PieceRules.hpp"
 #include <algorithm>
 #include <cmath>
 
 // Implements GameEngine.
-GameEngine::GameEngine(Board board)
-    : board(std::move(board)), gameOver(false), whiteScore(0), blackScore(0) {}
+GameEngine::GameEngine(Board board, EventBus* eventBus)
+    : board(std::move(board)),
+      gameOver(false),
+      whiteScore(0),
+      blackScore(0),
+      eventBus(eventBus) {}
 
 // Implements requestMove.
 MoveResult GameEngine::requestMove(const Position& source, const Position& destination) {
@@ -164,8 +169,9 @@ void GameEngine::processStepEvent(const StepEvent& event) {
         // The jumping piece receives the capture points.
         addCaptureScore(target->getColor(), capturedKind);
     
-        if (capturedKing)
-            gameOver = true;
+        if (capturedKing) {
+            endGame(target->getColor(), "king_captured");
+        }
     
         return;
     }
@@ -178,8 +184,18 @@ void GameEngine::processStepEvent(const StepEvent& event) {
     addCaptureScore(piece->getColor(), capturedKind);
 
     realTime.updateMotionCell(piece, event.to);
-    stopMovingPieceAt(piece, motion.source, event.to, event.eventTimeMs, true);
-    if (capturedKing) gameOver = true;
+    stopMovingPieceAt(
+        piece,
+        motion.source,
+        event.to,
+        event.eventTimeMs,
+        true,
+        capturedKind,
+        target->getColor()
+    );
+    if (capturedKing) {
+        endGame(piece->getColor(), "king_captured");
+    }
 }
 
 bool GameEngine::isCastlingRequest(const Position& source, const Position& destination) const {
@@ -273,6 +289,7 @@ bool GameEngine::completeCastleFor(const StepEvent& event) {
         entry.notation = castle.kingDestination.getCol() > castle.kingSource.getCol() ? "O-O" : "O-O-O";
         if (entry.color == PieceColor::White) whiteMoveHistory.push_back(entry);
         else blackMoveHistory.push_back(entry);
+        publishMoveCompleted(entry);
         pendingCastles.erase(it);
         return true;
     }
@@ -298,6 +315,7 @@ void GameEngine::processJumpLanding(const JumpLandingEvent& event) {
     entry.notation = "Jump";
     if (entry.color == PieceColor::White) whiteMoveHistory.push_back(entry);
     else blackMoveHistory.push_back(entry);
+    publishMoveCompleted(entry);
 }
 
 // Implements findPieceAtRealOrVirtualCell.
@@ -356,7 +374,9 @@ void GameEngine::stopMovingPieceAt(
     const Position& source,
     const Position& finalCell,
     long long eventTimeMs,
-    bool wasCapture
+    bool wasCapture,
+    PieceKind capturedKind,
+    PieceColor capturedColor
 ) {
     if (piece == nullptr) return;
     PieceKind originalKind = piece->getKind();
@@ -371,6 +391,18 @@ void GameEngine::stopMovingPieceAt(
 
     realTime.finishMotion(piece);
     recordMove(piece, originalKind, source, finalCell, wasCapture, promoted, false, eventTimeMs);
+    const vector<MoveHistoryEntry>& history =
+        piece->getColor() == PieceColor::White
+            ? whiteMoveHistory
+            : blackMoveHistory;
+    if (!history.empty()) {
+        publishMoveCompleted(
+            history.back(),
+            wasCapture,
+            capturedKind,
+            capturedColor
+        );
+    }
 }
 
 // Implements promotePawnIfNeeded.
@@ -398,8 +430,19 @@ int GameEngine::getPieceValue(PieceKind kind) const {
 
 // Implements addCaptureScore.
 void GameEngine::addCaptureScore(PieceColor attackerColor, PieceKind capturedKind) {
-    if (attackerColor == PieceColor::White) whiteScore += getPieceValue(capturedKind);
-    else blackScore += getPieceValue(capturedKind);
+    const int value = getPieceValue(capturedKind);
+    if (value == 0) return;
+
+    if (attackerColor == PieceColor::White) whiteScore += value;
+    else blackScore += value;
+
+    if (eventBus != nullptr) {
+        GameEvent event;
+        event.type = GameEventType::ScoreUpdated;
+        event.whiteScore = whiteScore;
+        event.blackScore = blackScore;
+        eventBus->publish(event);
+    }
 }
 
 // Implements buildMoveNotation.
@@ -444,6 +487,51 @@ void GameEngine::recordMove(
     entry.notation = buildMoveNotation(originalKind, source, destination, wasCapture, wasPromotion);
     if (entry.color == PieceColor::White) whiteMoveHistory.push_back(entry);
     else blackMoveHistory.push_back(entry);
+}
+
+void GameEngine::publishMoveCompleted(
+    const MoveHistoryEntry& entry,
+    bool hasCapturedPiece,
+    PieceKind capturedKind,
+    PieceColor capturedColor
+) {
+    if (eventBus == nullptr) return;
+
+    GameEvent event;
+    event.type = GameEventType::MoveCompleted;
+    event.source = entry.source;
+    event.destination = entry.destination;
+    event.movingPieceKind = entry.pieceKind;
+    event.movingPieceColor = entry.color;
+    event.wasCapture = entry.wasCapture;
+    event.hasCapturedPiece = hasCapturedPiece;
+    event.capturedPieceKind = capturedKind;
+    event.capturedPieceColor = capturedColor;
+    event.wasPromotion = entry.wasPromotion;
+    event.wasJump = entry.wasJump;
+    event.completedAtMs = entry.completedAtMs;
+    event.whiteScore = whiteScore;
+    event.blackScore = blackScore;
+    eventBus->publish(event);
+}
+
+void GameEngine::endGame(
+    PieceColor winner,
+    const string& reason
+) {
+    if (gameOver) return;
+    gameOver = true;
+
+    if (eventBus != nullptr) {
+        GameEvent event;
+        event.type = GameEventType::GameEnded;
+        event.hasWinner = true;
+        event.winner = winner;
+        event.gameEndReason = reason;
+        event.whiteScore = whiteScore;
+        event.blackScore = blackScore;
+        eventBus->publish(event);
+    }
 }
 
 // Implements getBoard.

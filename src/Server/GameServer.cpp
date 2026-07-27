@@ -18,7 +18,12 @@
 // Creates the server and its authoritative game state.
 GameServer::GameServer(unsigned short port)
     : port(port),
-      engine(createInitialBoard()),
+      eventBus(),
+      moveHistorySubscriber(eventBus),
+      scoreSubscriber(eventBus),
+      lifecycleSubscriber(eventBus),
+      lifecyclePublisher(eventBus),
+      engine(createInitialBoard(), &eventBus),
       messageBus(),
       messageHandler(engine, messageBus),
       tcpServer(),
@@ -462,6 +467,7 @@ void GameServer::closeExpiredGame() {
     std::vector<
         std::shared_ptr<ClientSession>
     > sessions;
+    bool wasActiveGame = false;
 
     {
         std::lock_guard<std::mutex> lock(
@@ -471,6 +477,7 @@ void GameServer::closeExpiredGame() {
         closingExpiredGame = true;
         reconnectionPending = false;
         gameStarted.store(false);
+        wasActiveGame = gameWasStarted;
 
         if (!whiteReconnectToken.empty()) {
             expiredReconnectTokens.insert(
@@ -518,8 +525,19 @@ void GameServer::closeExpiredGame() {
             engineMutex
         );
 
+        if (wasActiveGame) {
+            lifecyclePublisher.publishEnded(
+                "opponent_did_not_reconnect",
+                false,
+                PieceColor::White,
+                engine.getWhiteScore(),
+                engine.getBlackScore()
+            );
+        }
+
         engine = GameEngine(
-            createInitialBoard()
+            createInitialBoard(),
+            &eventBus
         );
         messageBus.clear();
     }
@@ -537,6 +555,8 @@ void GameServer::closeExpiredGame() {
         closingExpiredGame = false;
         lastReconnectSecondsSent = -1;
     }
+
+    lifecyclePublisher.reset();
 }
 
 // Updates or expires a pending reconnection period.
@@ -683,6 +703,8 @@ void GameServer::handleClient(
                 gameWasStarted = true;
                 reconnectionPending = false;
             }
+
+            lifecyclePublisher.publishStarted();
 
             Message startedMessage;
             startedMessage.type =

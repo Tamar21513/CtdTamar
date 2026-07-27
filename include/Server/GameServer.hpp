@@ -10,6 +10,8 @@
 #include "../Core/Board.hpp"
 #include "../Engine/GameEngine.hpp"
 #include "../Messaging/EngineMessageHandler.hpp"
+#include "../Messaging/EventBus.hpp"
+#include "../Messaging/GameEventSubscribers.hpp"
 #include "../Messaging/MessageBus.hpp"
 
 #include <atomic>
@@ -23,6 +25,11 @@ class GameServer {
 private:
     unsigned short port;
 
+    EventBus eventBus;
+    MoveHistorySubscriber moveHistorySubscriber;
+    ScoreSubscriber scoreSubscriber;
+    LifecycleSubscriber lifecycleSubscriber;
+    GameLifecyclePublisher lifecyclePublisher;
     GameEngine engine;
     MessageBus messageBus;
     EngineMessageHandler messageHandler;

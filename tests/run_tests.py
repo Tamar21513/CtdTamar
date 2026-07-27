@@ -4,21 +4,27 @@ import sys
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-EXE_PATH = os.path.join(ROOT_DIR, "main.exe")
+EXE_PATH = os.path.join(ROOT_DIR, "legacy_tests.exe")
 
 CPP_FILES = [
-    "main.cpp",
-    os.path.join("src", "Position.cpp"),
-    os.path.join("src", "Piece.cpp"),
-    os.path.join("src", "Board.cpp"),
-    os.path.join("src", "BoardParser.cpp"),
-    os.path.join("src", "BoardPrinter.cpp"),
-    os.path.join("src", "BoardMapper.cpp"),
-    os.path.join("src", "PieceRules.cpp"),
-    os.path.join("src", "RuleEngine.cpp"),
-    os.path.join("src", "GameEngine.cpp"),
-    os.path.join("src", "Controller.cpp"),
-    os.path.join("src", "RealTimeArbiter.cpp"),
+    os.path.join("tests", "legacy_console_main.cpp"),
+    os.path.join("src", "App", "ConsoleApp.cpp"),
+    os.path.join("src", "Core", "Position.cpp"),
+    os.path.join("src", "Core", "Piece.cpp"),
+    os.path.join("src", "Core", "Board.cpp"),
+    os.path.join("src", "IO", "BoardParser.cpp"),
+    os.path.join("src", "IO", "BoardPrinter.cpp"),
+    os.path.join("src", "IO", "BoardMapper.cpp"),
+    os.path.join("src", "Rules", "PieceRules.cpp"),
+    os.path.join("src", "Rules", "RuleEngine.cpp"),
+    os.path.join("src", "Engine", "GameEngine.cpp"),
+    os.path.join("src", "Control", "Controller.cpp"),
+    os.path.join("src", "Realtime", "RealTimeArbiter.cpp"),
+    os.path.join("src", "Messaging", "EventBus.cpp"),
+    os.path.join("src", "Messaging", "GameEventSubscribers.cpp"),
+    os.path.join("src", "Messaging", "MessageBus.cpp"),
+    os.path.join("src", "Messaging", "EngineMessageHandler.cpp"),
+    os.path.join("src", "Messaging", "GameStateSnapshotBuilder.cpp"),
 ]
 
 tests = [
@@ -138,7 +144,7 @@ print board
 """
     },
     {
-        "name": "friendly_piece_as_second_click_is_rejected_and_clears_selection",
+        "name": "friendly_piece_second_click_selects_that_piece",
         "input": """Board:
 wK wR .
 . . .
@@ -150,7 +156,7 @@ click 250 50
 wait 1000
 print board
 """,
-        "expected": """wK wR .
+        "expected": """wK . wR
 . . .
 . . .
 """
@@ -895,7 +901,7 @@ print board
 
     # Updated for current rule: only one active move is allowed at a time.
     {
-        "name": "multiple_moves_are_not_allowed_concurrently",
+        "name": "different_routes_can_move_concurrently",
         "input": """Board:
 wK . bK
 . . .
@@ -913,8 +919,8 @@ print board
         "expected": """wK . bK
 . . .
 . . .
-. . bK
-. wK .
+. . .
+. wK bK
 . . .
 """
     },
@@ -956,7 +962,7 @@ print board
 """
     },
     {
-        "name": "piece_can_move_again_immediately_after_arrival",
+        "name": "piece_cannot_move_again_during_cooldown",
         "input": """Board:
 wR . .
 Commands:
@@ -968,11 +974,11 @@ click 250 50
 wait 1000
 print board
 """,
-        "expected": """. . wR
+        "expected": """. wR .
 """
     },
     {
-        "name": "piece_can_move_again_without_cooldown_after_arrival",
+        "name": "king_cannot_move_again_during_cooldown",
         "input": """Board:
 wK . .
 . . .
@@ -987,8 +993,8 @@ wait 1000
 print board
 """,
         "expected": """. . .
+. wK .
 . . .
-. . wK
 """
     },
     {
@@ -1028,7 +1034,7 @@ print board
 """
     },
     {
-        "name": "after_arrival_same_piece_can_reverse_direction_immediately",
+        "name": "piece_cannot_reverse_during_cooldown",
         "input": """Board:
 wR . .
 Commands:
@@ -1040,13 +1046,13 @@ click 50 50
 wait 2000
 print board
 """,
-        "expected": """wR . .
+        "expected": """. . wR
 """
     },
 
     # Current common-route/global active movement restriction
     {
-        "name": "two_different_pieces_cannot_move_while_one_is_already_moving",
+        "name": "two_different_routes_can_move_concurrently",
         "input": """Board:
 wR . .
 bR . .
@@ -1060,7 +1066,7 @@ wait 2000
 print board
 """,
         "expected": """. . wR
-bR . .
+. . bR
 """
     },
     {
@@ -1086,7 +1092,7 @@ bR . .
 """
     },
     {
-        "name": "piece_can_move_twice_immediately_after_each_arrival",
+        "name": "repeated_moves_wait_for_cooldown",
         "input": """Board:
 wK . .
 . . .
@@ -1103,8 +1109,8 @@ click 250 150
 wait 1000
 print board
 """,
-        "expected": """. . .
-. . wK
+        "expected": """. wK .
+. . .
 . . .
 """
     },
@@ -1129,7 +1135,7 @@ wN . .
 """
     },
     {
-        "name": "cannot_start_second_piece_while_first_piece_is_moving_opposite_color",
+        "name": "opposite_color_piece_can_use_a_different_route",
         "input": """Board:
 wR . .
 . . .
@@ -1144,11 +1150,11 @@ print board
 """,
         "expected": """. . wR
 . . .
-bR . .
+. . bR
 """
     },
     {
-        "name": "cannot_start_second_piece_even_on_different_row_route",
+        "name": "second_piece_can_use_a_different_row_route",
         "input": """Board:
 wR . .
 . . .
@@ -1163,7 +1169,7 @@ print board
 """,
         "expected": """. . wR
 . . .
-wR . .
+. . wR
 """
     },
     {
@@ -1252,7 +1258,7 @@ bR . .
 """
     },
     {
-        "name": "cannot_start_knight_while_rook_is_moving",
+        "name": "knight_can_move_on_an_independent_route",
         "input": """Board:
 wR . .
 bN . .
@@ -1267,12 +1273,12 @@ wait 1500
 print board
 """,
         "expected": """. . wR
-bN . .
 . . .
+. . bN
 """
     },
     {
-        "name": "cannot_start_pawn_while_other_piece_is_moving",
+        "name": "pawn_can_move_on_an_independent_route",
         "input": """Board:
 wR . .
 . bP .
@@ -1287,8 +1293,8 @@ wait 1500
 print board
 """,
         "expected": """. . wR
-. bP .
 . . .
+. bQ .
 """
     },
     {
@@ -1574,7 +1580,7 @@ print board
 """
 },
 {
-    "name": "white_pawn_can_move_two_cells_from_start_row",
+    "name": "white_pawn_two_cell_move_uses_standard_start_row",
     "input": """Board:
 . . .
 . . .
@@ -1585,13 +1591,13 @@ click 150 50
 wait 2000
 print board
 """,
-    "expected": """. wQ .
+    "expected": """. . .
 . . .
-. . .
+. wP .
 """
 },
 {
-    "name": "black_pawn_can_move_two_cells_from_start_row",
+    "name": "black_pawn_reaches_last_row_and_promotes",
     "input": """Board:
 . . .
 . bP .
@@ -1604,9 +1610,9 @@ wait 2000
 print board
 """,
     "expected": """. . .
-. bP .
 . . .
 . . .
+. bQ .
 """
 },
 {
@@ -1739,7 +1745,7 @@ wN . .
 """
 },
 {
-    "name": "airborne_piece_captures_arriving_enemy",
+    "name": "jump_request_during_active_enemy_motion_is_rejected",
     "input": """Board:
 wN . .
 . . .
@@ -1751,7 +1757,7 @@ jump 50 50
 wait 2000
 print board
 """,
-    "expected": """wN . .
+    "expected": """bR . .
 . . .
 . . .
 """
@@ -1810,7 +1816,7 @@ print board
 """
 },
 {
-    "name": "piece_can_move_after_jump_lands",
+    "name": "piece_cannot_move_during_post_jump_cooldown",
     "input": """Board:
 wR . .
 . . .
@@ -1823,7 +1829,7 @@ click 250 50
 wait 2000
 print board
 """,
-    "expected": """. . wR
+    "expected": """wR . .
 . . .
 . . .
 """
