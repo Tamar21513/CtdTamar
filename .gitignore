@@ -1,2 +1,43 @@
+# Secrets
+.env
+.env.*
+!.env.example
 
-/cpp/OpenCV_451/
+# Build outputs
+build/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.obj
+*.o
+*.exe
+*.lib
+*.pdb
+*.ilk
+
+# Python generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Generated coverage reports
+coverage/
+coverage-report/
+docs/coverage-report/
+
+# IDE and OS files
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local infrastructure data
+postgres-data/
+redis-data/
+
+# Local legacy OpenCV installation
+/client/game_client/third_party/OpenCV_451/
