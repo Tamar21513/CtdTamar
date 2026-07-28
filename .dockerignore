@@ -1,0 +1,8 @@
+.git/
+*.obj
+*.exe
+*.ilk
+*.pdb
+__pycache__/
+*.pyc
+.pytest_cache/

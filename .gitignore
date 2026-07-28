@@ -1,2 +1,18 @@
 
-/cpp/OpenCV_451/
+/client/game_client/third_party/OpenCV_451/
+
+# Local infrastructure configuration and generated data
+.env
+server/api_gateway/.pytest_cache/
+server/api_gateway/__pycache__/
+server/api_gateway/**/*.pyc
+postgres-data/
+redis-data/
+
+# C++ build output
+/build/
+*.obj
+*.exe
+*.ilk
+*.pdb
+*.lib
