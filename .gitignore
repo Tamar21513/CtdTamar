@@ -32,6 +32,7 @@ docs/coverage-report/
 .vs/
 .vscode/
 .idea/
+.claude/
 .DS_Store
 Thumbs.db
 
@@ -40,4 +41,4 @@ postgres-data/
 redis-data/
 
 # Local legacy OpenCV installation
-/client/game_client/third_party/OpenCV_451/
+/client/desktop_client/third_party/OpenCV_451/

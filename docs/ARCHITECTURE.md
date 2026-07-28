@@ -2,7 +2,7 @@
 
 ## Server
 
-`server/game_server` owns every authoritative decision: move validation,
+`server/chess_server` owns every authoritative decision: move validation,
 rules, timing, captures, scores, snapshots, lifecycle events, and TCP client
 sessions. It links to `ctd_shared` and Winsock, but not OpenCV.
 
@@ -12,7 +12,7 @@ does not make game-rule decisions.
 
 ## Client
 
-`client/game_client` owns connection management, incoming snapshot handling,
+`client/desktop_client` owns connection management, incoming snapshot handling,
 move requests, mouse input, rendering, and animations. Its assets are copied
 beside `ctd_client.exe` during the build, and the client resolves them relative
 to its executable location.

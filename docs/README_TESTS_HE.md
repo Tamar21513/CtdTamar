@@ -2,7 +2,7 @@
 
 ## מה נוסף
 
-הבדיקות נמצאות ב-`server/game_server/tests/doctest` ומחולקות לפי אחריות:
+הבדיקות נמצאות ב-`server/chess_server/tests/doctest` ומחולקות לפי אחריות:
 
 - `test_position_piece.cpp` — Position ו-Piece.
 - `test_board_parser_mapper.cpp` — Board, parser, printer ומיפוי פיקסלים.
@@ -25,7 +25,7 @@ cd "C:\path\to\CTD"
 4. הריצי:
 
 ```bat
-server\game_server\tests\run_doctest.bat
+server\chess_server\tests\run_doctest.bat
 ```
 
 להצגת בדיקות שנכשלו בלבד אפשר להריץ לאחר הקומפילציה:
@@ -50,8 +50,8 @@ doctest_tests.exe --test-suite="Controller"
 ## הרצה ב-Linux / MinGW עם g++
 
 ```bash
-chmod +x server/game_server/tests/run_doctest.sh
-./server/game_server/tests/run_doctest.sh
+chmod +x server/chess_server/tests/run_doctest.sh
+./server/chess_server/tests/run_doctest.sh
 ```
 
 ## התקנת OpenCppCoverage ב-Windows
@@ -67,7 +67,7 @@ C:\Program Files\OpenCppCoverage\OpenCppCoverage.exe
 4. מתוך תיקיית הפרויקט הריצי:
 
 ```bat
-server\game_server\tests\run_coverage.bat
+server\chess_server\tests\run_coverage.bat
 ```
 
 הסקריפט מקמפל עם `/Zi /Od`, מריץ את כל הבדיקות ויוצר:

@@ -11,12 +11,12 @@ set(CTD_DOCTEST_SOURCES
 
 add_executable(ctd_tests
     ${CTD_DOCTEST_SOURCES}
-    ${PROJECT_SOURCE_DIR}/client/game_client/src/Client/ClientGameState.cpp
+    ${PROJECT_SOURCE_DIR}/client/desktop_client/src/Client/ClientGameState.cpp
 )
 
 target_include_directories(ctd_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/doctest
-    ${PROJECT_SOURCE_DIR}/client/game_client/include
+    ${PROJECT_SOURCE_DIR}/client/desktop_client/include
 )
 
 target_link_libraries(ctd_tests PRIVATE ctd_server_core)

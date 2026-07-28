@@ -15,19 +15,19 @@ The doctest suite is organized by responsibility:
 Open an x64 Native Tools Command Prompt for Visual Studio 2022, change to the project directory, and run:
 
 ```bat
-server\game_server\tests\run_doctest.bat
+server\chess_server\tests\run_doctest.bat
 ```
 
 For a coverage report, install OpenCppCoverage and run:
 
 ```bat
-server\game_server\tests\run_coverage.bat
+server\chess_server\tests\run_coverage.bat
 ```
 
 ## Linux or MinGW
 
 ```bash
-bash server/game_server/tests/run_doctest.sh
+bash server/chess_server/tests/run_doctest.sh
 ```
 
 The suite includes timing boundaries, pixel boundaries, invalid input, concurrent movement, collisions, jumps, and pawn promotion.

@@ -6,9 +6,9 @@ server, an OpenCV client, and a local Docker Compose infrastructure stack.
 ## Repository layout
 
 - `server/api_gateway` — FastAPI health service.
-- `server/game_server` — authoritative engine, rules, timing, TCP server, and
+- `server/chess_server` — authoritative engine, rules, timing, TCP server, and
   server-side tests.
-- `client/game_client` — network client, OpenCV UI, renderer, animations, and
+- `client/desktop_client` — network client, OpenCV UI, renderer, animations, and
   visual assets.
 - `shared/cpp` — DTOs, protocol serialization, common core types, and TCP
   connection code used by both C++ executables.
@@ -28,21 +28,21 @@ server, an OpenCV client, and a local Docker Compose infrastructure stack.
 
 Executables:
 
-- `build/server/game_server/Release/ctd_server.exe`
-- `build/client/game_client/Release/ctd_client.exe`
+- `build/server/chess_server/Release/ctd_server.exe`
+- `build/client/desktop_client/Release/ctd_client.exe`
 
 ## Run
 
 ```powershell
-.\build\server\game_server\Release\ctd_server.exe
-.\build\client\game_client\Release\ctd_client.exe
+.\build\server\chess_server\Release\ctd_server.exe
+.\build\client\desktop_client\Release\ctd_client.exe
 ```
 
 Compatibility modes:
 
 ```powershell
-.\build\server\game_server\Release\ctd_server.exe console
-.\build\client\game_client\Release\ctd_client.exe text
+.\build\server\chess_server\Release\ctd_server.exe console
+.\build\client\desktop_client\Release\ctd_client.exe text
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
