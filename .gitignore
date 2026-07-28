@@ -1,18 +1,43 @@
-
-/client/game_client/third_party/OpenCV_451/
-
-# Local infrastructure configuration and generated data
+# Secrets
 .env
-server/api_gateway/.pytest_cache/
-server/api_gateway/__pycache__/
-server/api_gateway/**/*.pyc
+.env.*
+!.env.example
+
+# Build outputs
+build/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.obj
+*.o
+*.exe
+*.lib
+*.pdb
+*.ilk
+
+# Python generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Generated coverage reports
+coverage/
+coverage-report/
+docs/coverage-report/
+
+# IDE and OS files
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local infrastructure data
 postgres-data/
 redis-data/
 
-# C++ build output
-/build/
-*.obj
-*.exe
-*.ilk
-*.pdb
-*.lib
+# Local legacy OpenCV installation
+/client/game_client/third_party/OpenCV_451/
