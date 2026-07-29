@@ -26,6 +26,8 @@ RUN python -m pip install \
     --requirement requirements.txt
 
 COPY app ./app
+COPY alembic.ini ./
+COPY migrations ./migrations
 
 
 FROM base AS test

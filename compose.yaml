@@ -65,7 +65,12 @@ services:
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DB: ${REDIS_DB:-0}
       API_GATEWAY_PORT: ${API_GATEWAY_PORT:-8000}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-ctd_session}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-3600}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SESSION_COOKIE_SAMESITE: ${SESSION_COOKIE_SAMESITE:-lax}
     ports:
       - "127.0.0.1:${API_GATEWAY_PORT:-8000}:${API_GATEWAY_PORT:-8000}"
     depends_on:
@@ -87,6 +92,64 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
+    networks:
+      - backend
+
+  postgres-test:
+    image: postgres:17.7-alpine3.22
+    profiles: ["test"]
+    environment:
+      POSTGRES_DB: ctd_test
+      POSTGRES_USER: ctd_test
+      POSTGRES_PASSWORD: ctd_test_only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ctd_test -d ctd_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks:
+      - backend
+
+  redis-test:
+    image: redis:7.4.10-alpine3.21
+    profiles: ["test"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    tmpfs:
+      - /data
+    networks:
+      - backend
+
+  api-gateway-test:
+    profiles: ["test"]
+    build:
+      context: ./server/api_gateway
+      dockerfile: Dockerfile
+      target: test
+    environment:
+      POSTGRES_DB: ctd_test
+      POSTGRES_USER: ctd_test
+      POSTGRES_PASSWORD: ctd_test_only
+      POSTGRES_HOST: postgres-test
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      SESSION_COOKIE_NAME: ctd_session
+      SESSION_TTL_SECONDS: 3600
+      SESSION_COOKIE_SECURE: "false"
+      SESSION_COOKIE_SAMESITE: lax
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
     networks:
       - backend
 
