@@ -10,6 +10,7 @@ from app.auth.router import router as auth_router
 from app.config import Settings, get_settings
 from app.db.session import create_database_engine, create_session_factory
 from app.health import build_health_response
+from app.websocket.router import router as websocket_router
 
 
 def check_postgres(settings: Settings | None = None) -> bool:
@@ -77,6 +78,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(auth_router)
+app.include_router(websocket_router)
 
 
 @app.get("/health")
