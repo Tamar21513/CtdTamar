@@ -88,7 +88,7 @@ The test profile uses only `postgres-test` and `redis-test`.
 
 ## Current limitations
 
-Stage 3C does not implement rooms, matchmaking, player colors, chess messages,
-or communication with the C++ chess server. The C++ desktop client still uses
-the existing realtime TCP protocol. Those integrations belong to later
-stages.
+Stage 3D adds in-memory lobby, room, color-assignment, and spectator metadata;
+see `docs/GAME_ROOMS.md`. It still does not implement chess messages,
+board state, or communication with the C++ chess server. The C++ desktop
+client continues to use the existing realtime TCP protocol.
