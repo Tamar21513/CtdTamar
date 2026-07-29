@@ -1,79 +1,68 @@
 # CTD Local Infrastructure
 
-Stage 3A provides PostgreSQL, Redis, and a minimal API Gateway for local
-development. The API Gateway currently exposes only `GET /health`. The C++
-GameEngine remains authoritative for every game rule.
-
-## Prerequisite
-
-Install Docker Desktop for Windows and start it before running these commands.
-Run all commands from the project root in Windows PowerShell.
+Docker Compose provides PostgreSQL, Redis, and the FastAPI API Gateway.
+PostgreSQL stores users; Redis stores expiring authentication sessions.
+The C++ chess server remains authoritative for all game rules.
 
 ## Configure local values
+
+Run from the repository root in Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Edit `.env` and replace the placeholder PostgreSQL password. The `.env` file
-is ignored by Git and must not be committed.
+Replace the placeholder PostgreSQL password in `.env`. Never commit `.env`.
 
-## Validate and start
+## Build and start
 
 ```powershell
 docker compose config
-docker compose up --build --detach
+docker compose build --no-cache
+docker compose up -d postgres redis
+docker compose run --rm api-gateway alembic upgrade head
+docker compose up -d api-gateway
 docker compose ps
 ```
 
-Wait until `postgres`, `redis`, and `api-gateway` all report `healthy`.
-
-## Call the health endpoint
+For an already-running API Gateway, migrations can also be applied with:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health | ConvertTo-Json -Compress
+docker compose exec api-gateway alembic upgrade head
 ```
 
-Expected response:
+Migrations are explicit. The application does not create or drop tables at
+startup.
+
+## Health
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health |
+    ConvertTo-Json -Depth 5
+```
+
+Expected healthy response:
 
 ```json
 {"api_gateway":"healthy","postgresql":"healthy","redis":"healthy"}
 ```
 
-If `API_GATEWAY_PORT` is changed in `.env`, use that port in the URL.
+## Isolated integration tests
 
-## View logs
+The test profile uses temporary `postgres-test` and `redis-test` services; it
+does not delete data from the normal development services.
 
 ```powershell
-docker compose logs --follow
+docker compose --profile test run --rm api-gateway-test pytest -q
+docker compose --profile test down
 ```
 
-To view one service:
+Do not use `docker compose down -v` during normal development because it
+deletes persistent PostgreSQL and Redis volumes.
+
+## Logs and shutdown
 
 ```powershell
 docker compose logs --follow api-gateway
-```
-
-## Run API Gateway tests
-
-```powershell
-docker build --target test --tag ctd-api-gateway-test ./server/api_gateway
-docker run --rm ctd-api-gateway-test
-```
-
-## Restart and verify persistence
-
-```powershell
-docker compose restart
-docker compose ps
-Invoke-RestMethod http://127.0.0.1:8000/health | ConvertTo-Json -Compress
-```
-
-## Stop without deleting persistent data
-
-```powershell
 docker compose down
 ```
-
-Do not use `docker compose down -v` during normal testing. The `-v` option
-deletes the named PostgreSQL and Redis volumes.
