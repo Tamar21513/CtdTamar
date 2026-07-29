@@ -1,4 +1,5 @@
 #include "App/VisualApp.hpp"
+#include "App/LobbyApp.hpp"
 #include "Client/ClientApp.hpp"
 
 #include <charconv>
@@ -45,31 +46,55 @@ int main(int argc, char* argv[]) {
             );
         }
 
-        bool textMode = false;
+        enum class ClientMode { Lobby, Game, Text };
+        ClientMode mode = ClientMode::Lobby;
         int endpointIndex = 1;
         if (
             argc >= 2 &&
             std::string(argv[1]) == "text"
         ) {
-            textMode = true;
+            mode = ClientMode::Text;
+            endpointIndex = 2;
+        }
+        else if (
+            argc >= 2 &&
+            std::string(argv[1]) == "game"
+        ) {
+            mode = ClientMode::Game;
+            endpointIndex = 2;
+        }
+        else if (
+            argc >= 2 &&
+            std::string(argv[1]) == "lobby"
+        ) {
+            mode = ClientMode::Lobby;
             endpointIndex = 2;
         }
 
         const int endpointArguments =
             argc - endpointIndex;
         if (
-            endpointArguments != 0 &&
+            (mode == ClientMode::Lobby &&
+             endpointArguments != 0) ||
+            (mode != ClientMode::Lobby &&
+             endpointArguments != 0 &&
             endpointArguments != 2
+            )
         ) {
             std::cerr
-                << "Usage: ctd_client.exe "
+                << "Usage: ctd_client.exe [lobby]\n"
+                << "       ctd_client.exe game "
                    "[server-host port]\n"
                 << "       ctd_client.exe text "
                    "[server-host port]\n";
             return 1;
         }
 
-        if (textMode) {
+        if (mode == ClientMode::Lobby) {
+            ctd::lobby::LobbyApp app;
+            app.run();
+        }
+        else if (mode == ClientMode::Text) {
             ClientApp app;
             if (endpointArguments == 0) {
                 app.run();
