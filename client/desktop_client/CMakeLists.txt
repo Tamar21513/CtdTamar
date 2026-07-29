@@ -5,6 +5,7 @@ find_package(Boost CONFIG REQUIRED COMPONENTS json)
 find_package(Threads REQUIRED)
 
 add_library(ctd_client_core STATIC
+    src/App/LobbyApp.cpp
     src/App/VisualApp.cpp
     src/Client/ClientApp.cpp
     src/Client/ClientGameState.cpp
@@ -20,6 +21,12 @@ add_library(ctd_client_core STATIC
     src/Graphics/VisualSnapshotBuilder.cpp
     src/Graphics/VisualState.cpp
     src/Graphics/VisualStateMachine.cpp
+    src/Lobby/LobbyApplicationState.cpp
+    src/Lobby/LobbyController.cpp
+    src/Lobby/LobbyInputMapper.cpp
+    src/Lobby/LobbyLayout.cpp
+    src/Lobby/LobbyRenderer.cpp
+    src/Lobby/LobbyTransport.cpp
     src/Network/ApiClient.cpp
     src/Network/LobbyClient.cpp
     src/Network/LobbyProtocol.cpp
@@ -98,4 +105,18 @@ ctd_copy_runtime_dependencies(ctd_client_transport_tests)
 add_test(
     NAME ctd_client_transport_tests
     COMMAND ctd_client_transport_tests
+)
+
+add_executable(
+    ctd_client_lobby_ui_tests
+    tests/lobby_ui_tests.cpp
+)
+target_link_libraries(
+    ctd_client_lobby_ui_tests
+    PRIVATE ctd_client_core
+)
+ctd_copy_runtime_dependencies(ctd_client_lobby_ui_tests)
+add_test(
+    NAME ctd_client_lobby_ui_tests
+    COMMAND ctd_client_lobby_ui_tests
 )

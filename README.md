@@ -34,13 +34,15 @@ Executables:
 ## Run
 
 ```powershell
-.\build\server\chess_server\Release\ctd_server.exe
 .\build\client\desktop_client\Release\ctd_client.exe
 ```
 
-Compatibility modes:
+The default client opens the native authentication and lobby UI. The existing
+authoritative chess server and visual game client remain available explicitly:
 
 ```powershell
+.\build\server\chess_server\Release\ctd_server.exe
+.\build\client\desktop_client\Release\ctd_client.exe game
 .\build\server\chess_server\Release\ctd_server.exe console
 .\build\client\desktop_client\Release\ctd_client.exe text
 ```
