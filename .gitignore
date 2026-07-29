@@ -5,6 +5,8 @@
 
 # Build outputs
 build/
+build-stage3e/
+vcpkg_installed/
 out/
 cmake-build-*/
 CMakeFiles/

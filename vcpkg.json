@@ -1,0 +1,14 @@
+{
+  "name": "ctd",
+  "version-string": "3.0.0",
+  "dependencies": [
+    "boost-beast",
+    "boost-json",
+    {
+      "name": "opencv4",
+      "features": [
+        "highgui"
+      ]
+    }
+  ]
+}
