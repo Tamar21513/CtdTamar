@@ -10,6 +10,7 @@ from app.auth.router import router as auth_router
 from app.config import Settings, get_settings
 from app.db.session import create_database_engine, create_session_factory
 from app.health import build_health_response
+from app.rooms.manager import RoomManager
 from app.websocket.router import router as websocket_router
 
 
@@ -63,6 +64,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db_engine = engine
     app.state.db_session_factory = create_session_factory(engine)
     app.state.redis_client = redis_client
+    app.state.room_manager = RoomManager()
     try:
         yield
     finally:
