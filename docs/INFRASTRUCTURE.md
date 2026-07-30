@@ -1,8 +1,11 @@
 # CTD Local Infrastructure
 
 Docker Compose provides PostgreSQL, Redis, and the FastAPI API Gateway.
-PostgreSQL stores users; Redis stores expiring authentication sessions.
+PostgreSQL stores users and persistent data. Redis stores expiring sessions
+and temporary room/session state.
 The C++ chess server remains authoritative for all game rules.
+Native C++ Gateway work is paused on the separate `stage3g-cpp-gateway`
+branch and is not active in this Compose topology.
 
 ## Configure local values
 

@@ -24,11 +24,25 @@ public:
         const = 0;
     virtual bool subscribeLobby() = 0;
     virtual bool requestLobby() = 0;
-    virtual bool createPublicRoom() = 0;
-    virtual bool createHiddenRoom() = 0;
+    virtual bool createRoom(
+        const std::string& name,
+        bool hidden) = 0;
     virtual bool joinPublicRoom(const std::string& roomId) = 0;
     virtual bool joinHiddenRoom(const std::string& roomCode) = 0;
     virtual bool watchRoom(const std::string& roomId) = 0;
+    virtual bool leaveSpectator(const std::string& roomId) = 0;
+    virtual bool sendMove(
+        const std::string& roomId,
+        unsigned long long sequence,
+        int sourceRow,
+        int sourceCol,
+        int destinationRow,
+        int destinationCol) = 0;
+    virtual bool sendJump(
+        const std::string& roomId,
+        unsigned long long sequence,
+        int row,
+        int col) = 0;
     virtual std::optional<ctd::network::LobbyClientEvent> pollEvent() = 0;
 };
 
@@ -50,11 +64,25 @@ public:
         const override;
     bool subscribeLobby() override;
     bool requestLobby() override;
-    bool createPublicRoom() override;
-    bool createHiddenRoom() override;
+    bool createRoom(
+        const std::string& name,
+        bool hidden) override;
     bool joinPublicRoom(const std::string& roomId) override;
     bool joinHiddenRoom(const std::string& roomCode) override;
     bool watchRoom(const std::string& roomId) override;
+    bool leaveSpectator(const std::string& roomId) override;
+    bool sendMove(
+        const std::string& roomId,
+        unsigned long long sequence,
+        int sourceRow,
+        int sourceCol,
+        int destinationRow,
+        int destinationCol) override;
+    bool sendJump(
+        const std::string& roomId,
+        unsigned long long sequence,
+        int row,
+        int col) override;
     std::optional<ctd::network::LobbyClientEvent> pollEvent() override;
 
 private:

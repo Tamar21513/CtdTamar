@@ -23,6 +23,9 @@ struct LobbyLayoutResult {
     cv::Rect modal;
     cv::Rect modalPrimaryButton;
     cv::Rect modalSecondaryButton;
+    cv::Rect roomNameField;
+    cv::Rect publicVisibilityButton;
+    cv::Rect hiddenVisibilityButton;
     cv::Rect hiddenCodeField;
     cv::Rect backButton;
     std::vector<cv::Rect> waitingCards;

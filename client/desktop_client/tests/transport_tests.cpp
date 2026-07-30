@@ -162,10 +162,15 @@ TEST_CASE("LobbyProtocol serializes every outgoing operation") {
     CHECK(valueOf(LobbyProtocol::subscribeLobby(), "type") ==
           "subscribe_lobby");
     CHECK(valueOf(LobbyProtocol::getLobby(), "type") == "get_lobby");
-    CHECK(valueOf(LobbyProtocol::createRoom(false), "visibility") ==
+    CHECK(valueOf(
+        LobbyProtocol::createRoom("My Room", false), "visibility") ==
           "public");
-    CHECK(valueOf(LobbyProtocol::createRoom(true), "visibility") ==
+    CHECK(valueOf(
+        LobbyProtocol::createRoom("Private Match", true), "visibility") ==
           "hidden");
+    CHECK(valueOf(
+        LobbyProtocol::createRoom("My Room", false), "name") ==
+          "My Room");
     CHECK(valueOf(LobbyProtocol::joinRoom("room-1"), "room_id") ==
           "room-1");
     CHECK(valueOf(
@@ -182,28 +187,30 @@ TEST_CASE("LobbyProtocol parses connected and lobby snapshot") {
     CHECK(std::holds_alternative<ConnectedEvent>(*connected.event));
 
     auto snapshot = LobbyProtocol::parse(
-        R"({"type":"lobby_snapshot","waiting_rooms":[{"room_id":"r1","visibility":"public","status":"waiting","host":{"id":"1","username":"alice"},"created_at":"now"}],"active_games":[{"room_id":"r2","status":"active","white":{"id":"1","username":"alice"},"black":{"id":"2","username":"bob"},"spectator_count":3,"created_at":"now"}]})");
+        R"({"type":"lobby_snapshot","waiting_rooms":[{"room_id":"r1","name":"Morning Match","visibility":"public","status":"waiting","host":{"id":"1","username":"alice"},"created_at":"now"}],"active_games":[{"room_id":"r2","name":"Final Table","status":"active","white":{"id":"1","username":"alice"},"black":{"id":"2","username":"bob"},"spectator_count":3,"created_at":"now"}]})");
     REQUIRE(snapshot.event.has_value());
     const auto& event =
         std::get<LobbySnapshotEvent>(*snapshot.event);
     CHECK(event.waitingRooms.size() == 1);
     CHECK(event.activeGames.size() == 1);
+    CHECK(event.waitingRooms[0].name == "Morning Match");
+    CHECK(event.activeGames[0].name == "Final Table");
     CHECK(event.activeGames[0].spectatorCount == 3);
 }
 
 TEST_CASE("LobbyProtocol parses room lifecycle messages") {
     const auto roomCreated = LobbyProtocol::parse(
-        R"({"type":"room_created","room":{"room_id":"r","visibility":"hidden","status":"waiting","host":{"id":"1","username":"alice"},"room_code":"ABC234"}})");
+        R"({"type":"room_created","room":{"room_id":"r","name":"Private Match","visibility":"hidden","status":"waiting","host":{"id":"1","username":"alice"},"room_code":"ABC234"}})");
     CHECK(roomCreated.event.has_value());
     CHECK(std::holds_alternative<RoomCreatedEvent>(*roomCreated.event));
 
     const auto started = LobbyProtocol::parse(
-        R"({"type":"game_started","room_id":"r","color":"white","opponent":{"id":"2","username":"bob"}})");
+        R"({"type":"game_started","room_id":"r","name":"Private Match","color":"white","opponent":{"id":"2","username":"bob"}})");
     CHECK(started.event.has_value());
     CHECK(std::holds_alternative<GameStartedEvent>(*started.event));
 
     const auto watching = LobbyProtocol::parse(
-        R"({"type":"watching_game","room_id":"r","white":{"id":"1","username":"alice"},"black":{"id":"2","username":"bob"},"spectator_count":1})");
+        R"({"type":"watching_game","room_id":"r","name":"Private Match","white":{"id":"1","username":"alice"},"black":{"id":"2","username":"bob"},"spectator_count":1})");
     CHECK(watching.event.has_value());
     CHECK(std::holds_alternative<WatchingGameEvent>(*watching.event));
 
@@ -272,6 +279,61 @@ TEST_CASE("Network events cross the thread boundary safely") {
     CHECK_FALSE(queue.tryPop().has_value());
 }
 
+TEST_CASE("authoritative match protocol serializes moves") {
+    const auto value = boost::json::parse(
+        LobbyProtocol::moveRequest(
+            "room-1", 7, 6, 4, 5, 4)).as_object();
+    CHECK(value.at("type").as_string() == "move_request");
+    CHECK(value.at("room_id").as_string() == "room-1");
+    CHECK(value.at("sequence").as_int64() == 7);
+    CHECK(value.at("from").as_object().at("row").as_int64() == 6);
+    CHECK(value.at("to").as_object().at("row").as_int64() == 5);
+
+    const auto jump = boost::json::parse(
+        LobbyProtocol::jumpRequest(
+            "room-1", 8, 6, 4)).as_object();
+    CHECK(jump.at("type").as_string() == "jump_request");
+    CHECK(jump.at("sequence").as_int64() == 8);
+    CHECK(jump.at("cell").as_object().at("row").as_int64() == 6);
+    CHECK(jump.at("cell").as_object().at("col").as_int64() == 4);
+
+    const auto leave = boost::json::parse(
+        LobbyProtocol::leaveSpectator("room-1")).as_object();
+    CHECK(leave.at("type").as_string() == "leave_spectator");
+}
+
+TEST_CASE("authoritative snapshots and results parse") {
+    const std::string state =
+        R"({"serverTimeMs":1,"gameOver":false,"whiteScore":0,)"
+        R"("blackScore":0,"whiteUsername":"alice",)"
+        R"("blackUsername":"bob","playersReady":true,)"
+        R"("gameplayStartsAtEpochMs":10,)"
+        R"("pieces":[{"id":1,"token":"wP",)"
+        R"("position":{"row":6,"col":4},"state":"idle",)"
+        R"("hasMoved":false,"remainingCooldownMs":0,)"
+        R"("totalCooldownMs":0}],"motions":[],"jumps":[],)"
+        R"("whiteMoveHistory":[],"blackMoveHistory":[]})";
+    auto ready = LobbyProtocol::parse(
+        R"({"type":"match_ready","room_id":"room-1",)"
+        R"("color":"white","opponent":"bob","revision":1,)"
+        "\"state\":" + state + "}");
+    INFO(ready.error);
+    REQUIRE(ready.event.has_value());
+    REQUIRE(std::holds_alternative<MatchReadyEvent>(*ready.event));
+    const auto& event = std::get<MatchReadyEvent>(*ready.event);
+    CHECK(event.color == "white");
+    CHECK(event.revision == 1);
+    CHECK(event.state.pieces.size() == 1);
+
+    auto result = LobbyProtocol::parse(
+        R"({"type":"move_result","room_id":"room-1",)"
+        R"("sequence":7,"accepted":false,)"
+        R"("reason":"not_your_piece"})");
+    REQUIRE(result.event.has_value());
+    CHECK(std::get<MoveResultEvent>(*result.event).reason ==
+          "not_your_piece");
+}
+
 TEST_CASE("Live native authentication and lobby transport") {
     if (std::getenv("CTD_RUN_LIVE_TRANSPORT_TEST") == nullptr) {
         return;
@@ -310,7 +372,7 @@ TEST_CASE("Live native authentication and lobby transport") {
     CHECK(std::holds_alternative<LobbySnapshotEvent>(
         *snapshot->protocolEvent));
 
-    REQUIRE(client.createPublicRoom());
+    REQUIRE(client.createRoom("Native Live Room", false));
     auto created = waitForLobbyEvent(client);
     REQUIRE(created.has_value());
     REQUIRE(created->protocolEvent.has_value());

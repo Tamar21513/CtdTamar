@@ -5,6 +5,14 @@
 
 namespace ctd::lobby {
 
+GameplayPresentation gameplayPresentation(
+    const LobbyViewModel& view) {
+    return {
+        "",
+        "",
+        view.screen == LobbyScreen::SpectatorGame};
+}
+
 bool LobbyViewModel::networkActionsEnabled() const {
     return screen == LobbyScreen::Lobby &&
         connectionState ==
@@ -96,6 +104,8 @@ void LobbyApplicationState::applyEvent(
             } else if constexpr (
                 std::is_same_v<Event, ctd::network::RoomCreatedEvent>) {
                 view_.pendingAction = PendingLobbyAction::None;
+                view_.currentRoomName = value.room.name;
+                view_.roomNameInput.clear();
                 if (value.room.visibility == "hidden" &&
                     value.room.roomCode) {
                     view_.hiddenRoomCode = *value.room.roomCode;
@@ -107,8 +117,10 @@ void LobbyApplicationState::applyEvent(
                 view_.pendingRoomId = value.room.roomId;
             } else if constexpr (
                 std::is_same_v<Event, ctd::network::GameStartedEvent>) {
+                view_.currentRoomName = value.roomName;
                 view_.roomReady = RoomReadyView{
                     value.roomId,
+                    value.roomName,
                     value.color,
                     value.opponent.username};
                 view_.screen = LobbyScreen::RoomReady;
@@ -117,11 +129,59 @@ void LobbyApplicationState::applyEvent(
                 std::is_same_v<Event, ctd::network::WatchingGameEvent>) {
                 view_.spectator = SpectatorView{
                     value.roomId,
+                    value.roomName,
                     value.white.username,
                     value.black.username,
                     value.spectatorCount};
                 view_.screen = LobbyScreen::SpectatorPlaceholder;
                 view_.pendingAction = PendingLobbyAction::None;
+            } else if constexpr (
+                std::is_same_v<Event, ctd::network::MatchReadyEvent>) {
+                view_.match = AuthoritativeMatchView{
+                    value.roomId,
+                    value.color,
+                    value.opponent,
+                    value.revision,
+                    1,
+                    value.state,
+                    std::nullopt,
+                    {},
+                    false};
+                view_.pendingRoomId = value.roomId;
+                view_.screen = LobbyScreen::Game;
+                view_.roomReady.reset();
+                view_.pendingAction = PendingLobbyAction::None;
+            } else if constexpr (
+                std::is_same_v<Event, ctd::network::MatchSnapshotEvent>) {
+                view_.match = AuthoritativeMatchView{
+                    value.roomId,
+                    {},
+                    {},
+                    value.revision,
+                    1,
+                    value.state,
+                    std::nullopt,
+                    {},
+                    true};
+                view_.pendingRoomId = value.roomId;
+                view_.screen = LobbyScreen::SpectatorGame;
+                view_.pendingAction = PendingLobbyAction::None;
+            } else if constexpr (
+                std::is_same_v<Event, ctd::network::MatchStateEvent>) {
+                if (view_.match &&
+                    view_.match->roomId == value.roomId &&
+                    value.revision > view_.match->revision) {
+                    view_.match->revision = value.revision;
+                    view_.match->snapshot = value.state;
+                }
+            } else if constexpr (
+                std::is_same_v<Event, ctd::network::MoveResultEvent>) {
+                if (view_.match &&
+                    view_.match->roomId == value.roomId) {
+                    view_.match->moveStatus = value.accepted
+                        ? ""
+                        : "Move rejected: " + value.reason;
+                }
             } else if constexpr (
                 std::is_same_v<Event, ctd::network::OpponentDisconnectedEvent>) {
                 view_.visibleError = "The opponent disconnected.";

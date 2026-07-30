@@ -6,9 +6,14 @@
 rules, timing, captures, scores, snapshots, lifecycle events, and TCP client
 sessions. It links to `ctd_shared` and Winsock, but not OpenCV.
 
-`server/api_gateway` is an independent FastAPI service. At this stage it
-exposes only `GET /health` and checks PostgreSQL and Redis connectivity. It
-does not make game-rule decisions.
+`server/api_gateway` is the active Python/FastAPI service. It owns HTTP
+authentication, authenticated WebSockets, lobby updates, rooms, and spectator
+metadata. PostgreSQL stores users and persistent data; Redis stores sessions
+and temporary room/session state. The Gateway does not make chess-rule
+decisions.
+
+The native C++ Gateway prototype is paused and preserved on the separate
+`stage3g-cpp-gateway` branch.
 
 ## Client
 

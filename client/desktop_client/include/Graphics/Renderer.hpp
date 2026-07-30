@@ -31,6 +31,7 @@ class Renderer {
 public:
     static const int SIDE_PANEL_WIDTH = 250;
     static const int SCORE_PANEL_HEIGHT = 70;
+    static cv::Rect spectatorBackButtonRect();
 
     Renderer(const std::string& boardImagePath, int boardDisplaySize);
     Renderer(const std::string& boardImagePath, int boardDisplaySize, const std::string& windowName);
@@ -48,7 +49,8 @@ public:
         const std::string& statusLine1 = "",
         const std::string& statusLine2 = "",
         RenderOverlayMode overlayMode =
-            RenderOverlayMode::Status
+            RenderOverlayMode::Status,
+        bool showSpectatorBackButton = false
     );
 
     cv::Mat cropTransparentMargins(const cv::Mat& sprite) const;

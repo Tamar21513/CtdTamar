@@ -5,7 +5,8 @@ server, an OpenCV client, and a local Docker Compose infrastructure stack.
 
 ## Repository layout
 
-- `server/api_gateway` — FastAPI health service.
+- `server/api_gateway` — active Python/FastAPI authentication, WebSocket,
+  lobby, and room Gateway.
 - `server/chess_server` — authoritative engine, rules, timing, TCP server, and
   server-side tests.
 - `client/desktop_client` — network client, OpenCV UI, renderer, animations, and
@@ -14,6 +15,9 @@ server, an OpenCV client, and a local Docker Compose infrastructure stack.
   connection code used by both C++ executables.
 - `docs` — architecture, infrastructure, development, and historical test
   documentation.
+
+The experimental native C++ Gateway is paused and preserved separately on the
+`stage3g-cpp-gateway` branch; it is not part of the active runtime.
 
 ## Configure and build C++
 
@@ -48,4 +52,6 @@ authoritative chess server and visual game client remain available explicitly:
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
-[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md).
+[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md). The room-to-game startup
+order and current single-match boundary are documented in
+[docs/SERVER_BRIDGE.md](docs/SERVER_BRIDGE.md).

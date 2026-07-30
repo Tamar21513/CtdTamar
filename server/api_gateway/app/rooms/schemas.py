@@ -14,6 +14,7 @@ def public_user(user: ConnectedUser) -> dict[str, str]:
 def room_created_message(room: GameRoom) -> dict[str, Any]:
     body: dict[str, Any] = {
         "room_id": str(room.room_id),
+        "name": room.name,
         "visibility": room.visibility,
         "status": room.status,
         "host": public_user(room.host),
@@ -31,6 +32,7 @@ def game_started_message(
     return {
         "type": "game_started",
         "room_id": str(room.room_id),
+        "name": room.name,
         "color": room.color_for(player.user_id),
         "opponent": public_user(opponent) if opponent else None,
     }
@@ -40,6 +42,7 @@ def watching_game_message(room: GameRoom) -> dict[str, Any]:
     return {
         "type": "watching_game",
         "room_id": str(room.room_id),
+        "name": room.name,
         "white": public_user(room.white) if room.white else None,
         "black": public_user(room.black) if room.black else None,
         "spectator_count": len(room.spectators),

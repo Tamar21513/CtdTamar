@@ -26,9 +26,18 @@ def connect(client: TestClient):
     return client.websocket_connect("/ws")
 
 
-def create_room(socket, visibility: str) -> dict:
+def create_room(
+    socket,
+    visibility: str,
+    name: str | None = None,
+) -> dict:
+    room_name = name or f"{visibility.title()} Room {id(socket)}"
     socket.send_json(
-        {"type": "create_room", "visibility": visibility}
+        {
+            "type": "create_room",
+            "name": room_name,
+            "visibility": visibility,
+        }
     )
     message = socket.receive_json()
     assert message["type"] == "room_created"
@@ -76,7 +85,10 @@ def test_create_public_and_hidden_rooms(
     login(client, public_credentials)
     with connect(client) as public_socket:
         public_socket.receive_json()
-        public_room = create_room(public_socket, "public")
+        public_room = create_room(
+            public_socket, "public", "Public Arena"
+        )
+        assert public_room["name"] == "Public Arena"
         assert public_room["visibility"] == "public"
         assert public_room["status"] == "waiting"
         assert "room_code" not in public_room
@@ -84,7 +96,10 @@ def test_create_public_and_hidden_rooms(
     login(client, hidden_credentials)
     with connect(client) as hidden_socket:
         hidden_socket.receive_json()
-        hidden_room = create_room(hidden_socket, "hidden")
+        hidden_room = create_room(
+            hidden_socket, "hidden", "Private Match"
+        )
+        assert hidden_room["name"] == "Private Match"
         assert hidden_room["visibility"] == "hidden"
         assert len(hidden_room["room_code"]) == 6
 
@@ -97,9 +112,90 @@ def test_invalid_visibility_is_rejected(
     with connect(client) as socket:
         socket.receive_json()
         socket.send_json(
-            {"type": "create_room", "visibility": "private"}
+            {
+                "type": "create_room",
+                "name": "Invalid Visibility",
+                "visibility": "private",
+            }
         )
         assert socket.receive_json()["code"] == "invalid_visibility"
+
+
+def test_room_name_validation_and_trimming(
+    client: TestClient,
+    registered_user: dict[str, str],
+) -> None:
+    login(client, registered_user)
+    with connect(client) as socket:
+        socket.receive_json()
+        for invalid_name in ("", "   ", "é" * 21):
+            socket.send_json(
+                {
+                    "type": "create_room",
+                    "name": invalid_name,
+                    "visibility": "public",
+                }
+            )
+            error = socket.receive_json()
+            assert error["type"] == "error"
+            assert error["code"] == "invalid_room_name"
+
+        room = create_room(
+            socket, "public", "  Trimmed Room  "
+        )
+        assert room["name"] == "Trimmed Room"
+
+
+def test_room_names_are_unique_for_waiting_and_active_rooms(
+    client: TestClient,
+) -> None:
+    host_credentials = register(client, "name_host")
+    guest_credentials = register(client, "name_guest")
+    other_credentials = register(client, "name_other")
+    login(client, host_credentials)
+    with connect(client) as host:
+        host.receive_json()
+        room = create_room(host, "public", "Unique Arena")
+
+        login(client, other_credentials)
+        with connect(client) as other:
+            other.receive_json()
+            other.send_json(
+                {
+                    "type": "create_room",
+                    "name": "unique arena",
+                    "visibility": "hidden",
+                }
+            )
+            error = other.receive_json()
+            assert error == {
+                "type": "error",
+                "code": "room_name_taken",
+                "message": "A room with this name already exists.",
+            }
+
+            login(client, guest_credentials)
+            with connect(client) as guest:
+                guest.receive_json()
+                guest.send_json(
+                    {
+                        "type": "join_room",
+                        "room_id": room["room_id"],
+                    }
+                )
+                host.receive_json()
+                guest.receive_json()
+
+                other.send_json(
+                    {
+                        "type": "create_room",
+                        "name": "UNIQUE ARENA",
+                        "visibility": "public",
+                    }
+                )
+                assert other.receive_json()["code"] == (
+                    "room_name_taken"
+                )
 
 
 def test_public_lobby_updates_and_hidden_room_does_not_leak(
@@ -121,6 +217,9 @@ def test_public_lobby_updates_and_hidden_room_does_not_leak(
             public_host.receive_json()
             public_room = create_room(public_host, "public")
             update = observer.receive_json()
+            assert update["waiting_rooms"][0]["name"] == (
+                public_room["name"]
+            )
             assert [
                 room["room_id"] for room in update["waiting_rooms"]
             ] == [public_room["room_id"]]
@@ -128,9 +227,17 @@ def test_public_lobby_updates_and_hidden_room_does_not_leak(
             login(client, hidden_credentials)
             with connect(client) as hidden_host:
                 hidden_host.receive_json()
-                create_room(hidden_host, "hidden")
+                hidden_room = create_room(
+                    hidden_host, "hidden", "Secret Name"
+                )
                 observer.send_json({"type": "ping"})
                 assert observer.receive_json() == {"type": "pong"}
+                observer.send_json({"type": "get_lobby"})
+                snapshot = observer.receive_json()
+                assert all(
+                    room.get("name") != hidden_room["name"]
+                    for room in snapshot["waiting_rooms"]
+                )
 
 
 def test_public_join_starts_game_with_deterministic_colors(
@@ -155,24 +262,16 @@ def test_public_join_starts_game_with_deterministic_colors(
         guest_started,
     ) = values
     try:
-        assert host_started == {
-            "type": "game_started",
-            "room_id": room["room_id"],
-            "color": "white",
-            "opponent": {
-                "id": guest_user["id"],
-                "username": guest_user["username"],
-            },
-        }
-        assert guest_started == {
-            "type": "game_started",
-            "room_id": room["room_id"],
-            "color": "black",
-            "opponent": {
-                "id": host_user["id"],
-                "username": host_user["username"],
-            },
-        }
+        assert host_started["type"] == "match_ready"
+        assert guest_started["type"] == "match_ready"
+        assert host_started["room_id"] == room["room_id"]
+        assert guest_started["room_id"] == room["room_id"]
+        assert host_started["color"] == "white"
+        assert guest_started["color"] == "black"
+        assert host_started["opponent"] == guest_user["username"]
+        assert guest_started["opponent"] == host_user["username"]
+        assert host_started["revision"] == 1
+        assert host_started["state"] == guest_started["state"]
     finally:
         guest_context.__exit__(None, None, None)
         host_context.__exit__(None, None, None)
@@ -211,13 +310,16 @@ def test_hidden_join_activates_visible_game(
                 guest_started = guest.receive_json()
                 assert host_started["color"] == "white"
                 assert guest_started["color"] == "black"
-                assert host_started["opponent"]["id"] == guest_user["id"]
-                assert guest_started["opponent"]["id"] == host_user["id"]
+                assert host_started["opponent"] == guest_user["username"]
+                assert guest_started["opponent"] == host_user["username"]
 
                 update = observer.receive_json()
                 assert update["waiting_rooms"] == []
                 assert update["active_games"][0]["room_id"] == (
                     room["room_id"]
+                )
+                assert update["active_games"][0]["name"] == (
+                    room["name"]
                 )
 
 
@@ -235,7 +337,11 @@ def test_invalid_room_rejections_and_duplicate_participation(
         )
         assert host.receive_json()["code"] == "cannot_join_own_room"
         host.send_json(
-            {"type": "create_room", "visibility": "public"}
+            {
+                "type": "create_room",
+                "name": "Another Room",
+                "visibility": "public",
+            }
         )
         assert host.receive_json()["code"] == "already_in_room"
 
@@ -332,7 +438,11 @@ def test_spectator_flow_and_disconnect_count(
             )
             watching = spectator.receive_json()
             assert watching["type"] == "watching_game"
+            assert watching["name"] == room["name"]
             assert watching["spectator_count"] == 1
+            snapshot = spectator.receive_json()
+            assert snapshot["type"] == "match_snapshot"
+            assert snapshot["revision"] == 1
             assert observer.receive_json()["active_games"][0][
                 "spectator_count"
             ] == 1
@@ -341,10 +451,19 @@ def test_spectator_flow_and_disconnect_count(
                 {"type": "watch_game", "room_id": room["room_id"]}
             )
             assert spectator.receive_json()["code"] == "already_watching"
-
-        assert observer.receive_json()["active_games"][0][
-            "spectator_count"
-        ] == 0
+            spectator.send_json(
+                {
+                    "type": "leave_spectator",
+                    "room_id": room["room_id"],
+                }
+            )
+            assert spectator.receive_json() == {
+                "type": "spectator_left",
+                "room_id": room["room_id"],
+            }
+            assert observer.receive_json()["active_games"][0][
+                "spectator_count"
+            ] == 0
     finally:
         observer_context.__exit__(None, None, None)
         guest_context.__exit__(None, None, None)
@@ -437,6 +556,7 @@ def test_player_disconnect_notifies_opponent_and_spectator(
     spectator.send_json(
         {"type": "watch_game", "room_id": room["room_id"]}
     )
+    spectator.receive_json()
     spectator.receive_json()
     try:
         guest_context.__exit__(None, None, None)

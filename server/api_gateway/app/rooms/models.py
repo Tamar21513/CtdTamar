@@ -21,6 +21,7 @@ class ConnectedUser:
 @dataclass
 class GameRoom:
     room_id: UUID
+    name: str
     visibility: RoomVisibility
     host: ConnectedUser
     room_code: str | None = None

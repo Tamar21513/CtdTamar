@@ -108,6 +108,9 @@ void LobbyController::handle(const LobbyAction& action) {
         case LobbyActionType::OpenCreateRoom:
             if (view.networkActionsEnabled()) {
                 view.modal = LobbyModal::CreateRoom;
+                view.selectedRoomVisibility =
+                    RoomVisibilitySelection::Public;
+                view.visibleError.clear();
             }
             break;
         case LobbyActionType::OpenJoinHidden:
@@ -116,20 +119,37 @@ void LobbyController::handle(const LobbyAction& action) {
                 view.hiddenRoomCodeInput.clear();
             }
             break;
-        case LobbyActionType::CreatePublicRoom:
+        case LobbyActionType::SelectPublicVisibility:
+            view.selectedRoomVisibility =
+                RoomVisibilitySelection::Public;
+            break;
+        case LobbyActionType::SelectHiddenVisibility:
+            view.selectedRoomVisibility =
+                RoomVisibilitySelection::Hidden;
+            break;
+        case LobbyActionType::SubmitCreateRoom: {
+            const auto name = trimRoomName(view.roomNameInput);
+            if (name.empty()) {
+                state_.showError("Room name is required.");
+                break;
+            }
+            if (name.size() > 40) {
+                state_.showError(
+                    "Room name must be at most 40 UTF-8 bytes.");
+                break;
+            }
+            const bool hidden =
+                view.selectedRoomVisibility ==
+                RoomVisibilitySelection::Hidden;
             if (beginRoomAction(
-                    PendingLobbyAction::CreatePublicRoom) &&
-                !transport_.createPublicRoom()) {
+                    hidden
+                        ? PendingLobbyAction::CreateHiddenRoom
+                        : PendingLobbyAction::CreatePublicRoom) &&
+                !transport_.createRoom(name, hidden)) {
                 state_.showError("Could not create the room.");
             }
             break;
-        case LobbyActionType::CreateHiddenRoom:
-            if (beginRoomAction(
-                    PendingLobbyAction::CreateHiddenRoom) &&
-                !transport_.createHiddenRoom()) {
-                state_.showError("Could not create the room.");
-            }
-            break;
+        }
         case LobbyActionType::SubmitHiddenCode: {
             const auto code =
                 normalizeHiddenCode(view.hiddenRoomCodeInput);
@@ -167,10 +187,15 @@ void LobbyController::handle(const LobbyAction& action) {
             }
             break;
         case LobbyActionType::BackToLobby:
+            if (view.match && view.match->spectator) {
+                transport_.leaveSpectator(view.match->roomId);
+            }
             view.screen = LobbyScreen::Lobby;
             view.spectator.reset();
             view.roomReady.reset();
+            view.match.reset();
             view.hiddenRoomCode.clear();
+            view.currentRoomName.clear();
             view.pendingRoomId.clear();
             view.visibleError.clear();
             transport_.requestLobby();
@@ -221,6 +246,18 @@ void LobbyController::inputCharacter(char value) {
             password_.push_back(value);
             view.passwordLength = password_.size();
         }
+    } else if (view.modal == LobbyModal::CreateRoom) {
+        if (std::isprint(static_cast<unsigned char>(value))) {
+            auto candidate = view.roomNameInput;
+            candidate.push_back(value);
+            if (candidate.size() <= 40) {
+                view.roomNameInput = std::move(candidate);
+                view.visibleError.clear();
+            } else {
+                state_.showError(
+                    "Room name must be at most 40 UTF-8 bytes.");
+            }
+        }
     } else if (view.modal == LobbyModal::JoinHiddenRoom) {
         const auto upper = static_cast<char>(
             std::toupper(static_cast<unsigned char>(value)));
@@ -243,6 +280,11 @@ void LobbyController::backspace() {
             password_.pop_back();
             view.passwordLength = password_.size();
         }
+    } else if (
+        view.modal == LobbyModal::CreateRoom &&
+        !view.roomNameInput.empty()) {
+        view.roomNameInput.pop_back();
+        view.visibleError.clear();
     } else if (
         view.modal == LobbyModal::JoinHiddenRoom &&
         !view.hiddenRoomCodeInput.empty()) {
@@ -316,6 +358,110 @@ std::string LobbyController::normalizeHiddenCode(
         }
     }
     return normalized;
+}
+
+void LobbyController::gameBoardClick(int row, int col) {
+    auto& view = state_.editableForInput();
+    if (!view.match || view.match->spectator ||
+        view.screen != LobbyScreen::Game ||
+        row < 0 || row > 7 || col < 0 || col > 7) {
+        return;
+    }
+    auto& match = *view.match;
+    if (!match.selectedSource) {
+        const auto piece = std::find_if(
+            match.snapshot.pieces.begin(),
+            match.snapshot.pieces.end(),
+            [row, col](const PieceSnapshot& value) {
+                return value.position.getRow() == row &&
+                    value.position.getCol() == col &&
+                    value.state != "captured";
+            });
+        const char expected =
+            match.assignedColor == "black" ? 'b' : 'w';
+        if (piece == match.snapshot.pieces.end() ||
+            piece->token.empty() ||
+            piece->token.front() != expected) {
+            match.moveStatus = "Select one of your pieces.";
+            return;
+        }
+        match.selectedSource = Position(row, col);
+        match.moveStatus.clear();
+        return;
+    }
+
+    const Position source = *match.selectedSource;
+    const auto sequence = match.nextSequence++;
+    match.selectedSource.reset();
+    if (source == Position(row, col)) {
+        if (!transport_.sendJump(
+                match.roomId,
+                sequence,
+                row,
+                col)) {
+            match.moveStatus = "Could not send the jump.";
+        }
+        return;
+    }
+    if (!transport_.sendMove(
+            match.roomId,
+            sequence,
+            source.getRow(),
+            source.getCol(),
+            row,
+            col)) {
+        match.moveStatus = "Could not send the move.";
+    } else {
+        match.moveStatus = "Waiting for authoritative result...";
+    }
+}
+
+void LobbyController::gameBoardJump(int row, int col) {
+    auto& view = state_.editableForInput();
+    if (!view.match || view.match->spectator ||
+        view.screen != LobbyScreen::Game ||
+        row < 0 || row > 7 || col < 0 || col > 7) {
+        return;
+    }
+    auto& match = *view.match;
+    const auto piece = std::find_if(
+        match.snapshot.pieces.begin(),
+        match.snapshot.pieces.end(),
+        [row, col](const PieceSnapshot& value) {
+            return value.position.getRow() == row &&
+                value.position.getCol() == col &&
+                value.state != "captured";
+        });
+    const char expected =
+        match.assignedColor == "black" ? 'b' : 'w';
+    if (piece == match.snapshot.pieces.end() ||
+        piece->token.empty() ||
+        piece->token.front() != expected) {
+        match.moveStatus = "Select one of your pieces.";
+        return;
+    }
+    match.selectedSource.reset();
+    const auto sequence = match.nextSequence++;
+    if (!transport_.sendJump(
+            match.roomId, sequence, row, col)) {
+        match.moveStatus = "Could not send the jump.";
+    }
+}
+
+std::string LobbyController::trimRoomName(
+    const std::string& value) {
+    const auto first = std::find_if_not(
+        value.begin(), value.end(), [](unsigned char character) {
+            return std::isspace(character);
+        });
+    if (first == value.end()) {
+        return {};
+    }
+    const auto last = std::find_if_not(
+        value.rbegin(), value.rend(), [](unsigned char character) {
+            return std::isspace(character);
+        }).base();
+    return std::string(first, last);
 }
 
 std::string LobbyController::authErrorMessage(

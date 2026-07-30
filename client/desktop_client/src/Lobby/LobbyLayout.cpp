@@ -138,9 +138,24 @@ LobbyLayoutResult LobbyLayout::calculate(
 
     result.modal = {
         (width - 560) / 2,
-        (height - 330) / 2,
+        (height - 440) / 2,
         560,
-        330};
+        440};
+    result.roomNameField = {
+        result.modal.x + 60,
+        result.modal.y + 122,
+        result.modal.width - 120,
+        54};
+    result.publicVisibilityButton = {
+        result.modal.x + 60,
+        result.modal.y + 218,
+        200,
+        48};
+    result.hiddenVisibilityButton = {
+        result.modal.x + 300,
+        result.modal.y + 218,
+        200,
+        48};
     result.hiddenCodeField = {
         result.modal.x + 60,
         result.modal.y + 120,
@@ -148,12 +163,12 @@ LobbyLayoutResult LobbyLayout::calculate(
         54};
     result.modalPrimaryButton = {
         result.modal.x + 60,
-        result.modal.y + 226,
+        result.modal.y + 326,
         200,
         52};
     result.modalSecondaryButton = {
         result.modal.x + 300,
-        result.modal.y + 226,
+        result.modal.y + 326,
         200,
         52};
     result.backButton = {margin, 25, 160, 44};

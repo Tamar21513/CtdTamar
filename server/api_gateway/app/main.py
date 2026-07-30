@@ -10,6 +10,7 @@ from app.auth.router import router as auth_router
 from app.config import Settings, get_settings
 from app.db.session import create_database_engine, create_session_factory
 from app.health import build_health_response
+from app.matches.manager import MatchManager
 from app.rooms.manager import RoomManager
 from app.websocket.router import router as websocket_router
 
@@ -65,6 +66,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db_session_factory = create_session_factory(engine)
     app.state.redis_client = redis_client
     app.state.room_manager = RoomManager()
+
+    async def match_ended(room_id) -> None:
+        await app.state.room_manager.finish_room(room_id)
+        subscribers, snapshot = (
+            await app.state.room_manager.lobby_delivery()
+        )
+        for websocket in subscribers:
+            try:
+                await websocket.send_json(snapshot)
+            except RuntimeError:
+                pass
+
+    app.state.match_manager = MatchManager(
+        settings.CTD_GAME_SERVER_HOST,
+        settings.CTD_GAME_SERVER_PORT,
+        match_ended_handler=match_ended,
+    )
     try:
         yield
     finally:

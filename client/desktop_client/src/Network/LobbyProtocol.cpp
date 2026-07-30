@@ -1,5 +1,7 @@
 #include "Network/LobbyProtocol.hpp"
 
+#include "Network/Protocol.hpp"
+
 #include <boost/json.hpp>
 
 #include <stdexcept>
@@ -52,6 +54,37 @@ int optionalInteger(
     return static_cast<int>(value->as_int64());
 }
 
+unsigned long long requiredUnsigned(
+    const json::object& object,
+    const char* key) {
+    const auto* value = object.if_contains(key);
+    if (!value || !value->is_int64() || value->as_int64() < 0) {
+        throw std::invalid_argument(std::string("Invalid integer: ") + key);
+    }
+    return static_cast<unsigned long long>(value->as_int64());
+}
+
+GameStateSnapshot parseSnapshot(const json::object& object) {
+    json::object envelope{
+        {"version", Protocol::VERSION},
+        {"type", "game_state_updated"},
+        {"sequence", 0},
+        {"source", {{"row", -1}, {"col", -1}}},
+        {"destination", {{"row", -1}, {"col", -1}}},
+        {"accepted", true},
+        {"reason", "gateway_snapshot"},
+        {"playerColor", ""},
+        {"reconnectToken", ""},
+        {"username", ""},
+        {"whiteUsername", ""},
+        {"blackUsername", ""},
+        {"secondsRemaining", 0},
+        {"createdAtMs", 0},
+        {"hasSnapshot", true},
+        {"snapshot", object}};
+    return Protocol::deserialize(json::serialize(envelope)).snapshot;
+}
+
 LobbyUser parseUser(const json::object& object) {
     return {requiredString(object, "id"),
             requiredString(object, "username")};
@@ -73,6 +106,7 @@ std::optional<LobbyUser> optionalUser(
 LobbyRoom parseRoom(const json::object& object) {
     LobbyRoom room;
     room.roomId = requiredString(object, "room_id");
+    room.name = requiredString(object, "name");
     room.status = requiredString(object, "status");
     if (const auto* value = object.if_contains("visibility");
         value && value->is_string()) {
@@ -123,9 +157,12 @@ std::string LobbyProtocol::getLobby() {
     return serialize({{"type", "get_lobby"}});
 }
 
-std::string LobbyProtocol::createRoom(bool hidden) {
+std::string LobbyProtocol::createRoom(
+    const std::string& name,
+    bool hidden) {
     return serialize({
         {"type", "create_room"},
+        {"name", name},
         {"visibility", hidden ? "hidden" : "public"}});
 }
 
@@ -142,6 +179,40 @@ std::string LobbyProtocol::joinHiddenRoom(
 
 std::string LobbyProtocol::watchGame(const std::string& roomId) {
     return serialize({{"type", "watch_game"}, {"room_id", roomId}});
+}
+
+std::string LobbyProtocol::leaveSpectator(
+    const std::string& roomId) {
+    return serialize({
+        {"type", "leave_spectator"},
+        {"room_id", roomId}});
+}
+
+std::string LobbyProtocol::jumpRequest(
+    const std::string& roomId,
+    unsigned long long sequence,
+    int row,
+    int col) {
+    return serialize({
+        {"type", "jump_request"},
+        {"room_id", roomId},
+        {"sequence", sequence},
+        {"cell", {{"row", row}, {"col", col}}}});
+}
+
+std::string LobbyProtocol::moveRequest(
+    const std::string& roomId,
+    unsigned long long sequence,
+    int sourceRow,
+    int sourceCol,
+    int destinationRow,
+    int destinationCol) {
+    return serialize({
+        {"type", "move_request"},
+        {"room_id", roomId},
+        {"sequence", sequence},
+        {"from", {{"row", sourceRow}, {"col", sourceCol}}},
+        {"to", {{"row", destinationRow}, {"col", destinationCol}}}});
 }
 
 ProtocolParseResult LobbyProtocol::parse(
@@ -172,6 +243,7 @@ ProtocolParseResult LobbyProtocol::parse(
         if (type == "game_started") {
             return {LobbyEvent{GameStartedEvent{
                 requiredString(object, "room_id"),
+                requiredString(object, "name"),
                 requiredString(object, "color"),
                 parseUser(requiredObject(object, "opponent"))}}, {}};
         }
@@ -184,9 +256,45 @@ ProtocolParseResult LobbyProtocol::parse(
             }
             return {LobbyEvent{WatchingGameEvent{
                 requiredString(object, "room_id"),
+                requiredString(object, "name"),
                 *white,
                 *black,
                 optionalInteger(object, "spectator_count")}}, {}};
+        }
+        if (type == "match_ready") {
+            return {LobbyEvent{MatchReadyEvent{
+                requiredString(object, "room_id"),
+                requiredString(object, "color"),
+                requiredString(object, "opponent"),
+                requiredUnsigned(object, "revision"),
+                parseSnapshot(requiredObject(object, "state"))}}, {}};
+        }
+        if (type == "match_snapshot") {
+            return {LobbyEvent{MatchSnapshotEvent{
+                requiredString(object, "room_id"),
+                requiredUnsigned(object, "revision"),
+                parseSnapshot(requiredObject(object, "state"))}}, {}};
+        }
+        if (type == "match_state") {
+            return {LobbyEvent{MatchStateEvent{
+                requiredString(object, "room_id"),
+                requiredUnsigned(object, "revision"),
+                parseSnapshot(requiredObject(object, "state"))}}, {}};
+        }
+        if (type == "move_result") {
+            const auto* accepted = object.if_contains("accepted");
+            if (!accepted || !accepted->is_bool()) {
+                throw std::invalid_argument("Missing bool: accepted");
+            }
+            return {LobbyEvent{MoveResultEvent{
+                requiredString(object, "room_id"),
+                requiredUnsigned(object, "sequence"),
+                accepted->as_bool(),
+                requiredString(object, "reason")}}, {}};
+        }
+        if (type == "spectator_left") {
+            return {LobbyEvent{SpectatorLeftEvent{
+                requiredString(object, "room_id")}}, {}};
         }
         if (type == "opponent_disconnected") {
             return {LobbyEvent{OpponentDisconnectedEvent{
@@ -203,8 +311,10 @@ ProtocolParseResult LobbyProtocol::parse(
                 requiredString(object, "message")}}, {}};
         }
         return {std::nullopt, "Unsupported message type"};
-    } catch (const std::exception&) {
-        return {std::nullopt, "Malformed lobby message"};
+    } catch (const std::exception& error) {
+        return {
+            std::nullopt,
+            std::string("Malformed lobby message: ") + error.what()};
     }
 }
 
