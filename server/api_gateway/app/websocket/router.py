@@ -1,4 +1,5 @@
 import json
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -16,6 +17,8 @@ from app.websocket.authentication import (
 )
 from app.websocket.schemas import connected_message, error_message
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -64,6 +67,12 @@ async def _handle_room_message(
                 message.get("name"),
                 str(message.get("visibility", "")),
             )
+            logger.info(
+                "room_create room_id=%s username=%s visibility=%s",
+                room.room_id,
+                user.username,
+                room.visibility,
+            )
             await websocket.send_json(room_created_message(room))
             if room.visibility == "public":
                 await _broadcast_lobby(manager)
@@ -91,6 +100,11 @@ async def _handle_room_message(
             except MatchOperationError:
                 await manager.rollback_join(room.room_id, user.id)
                 raise
+            logger.info(
+                "room_join room_id=%s username=%s visibility=public",
+                room.room_id,
+                user.username,
+            )
             await _broadcast_lobby(manager)
             return True
 
@@ -112,6 +126,11 @@ async def _handle_room_message(
             except MatchOperationError:
                 await manager.rollback_join(room.room_id, user.id)
                 raise
+            logger.info(
+                "room_join room_id=%s username=%s visibility=hidden",
+                room.room_id,
+                user.username,
+            )
             await _broadcast_lobby(manager)
             return True
 
@@ -124,6 +143,11 @@ async def _handle_room_message(
             )
             await websocket.send_json(watching_game_message(room))
             await matches.watch_match(room.room_id, websocket)
+            logger.info(
+                "room_watch room_id=%s username=%s",
+                room.room_id,
+                user.username,
+            )
             await _broadcast_lobby(manager)
             return True
         if message_type == "leave_spectator":
@@ -158,6 +182,12 @@ async def _handle_room_message(
             )
             return True
     except (RoomOperationError, MatchOperationError) as error:
+        logger.warning(
+            "room_operation_failed type=%s code=%s username=%s",
+            message_type,
+            error.code,
+            user.username,
+        )
         await websocket.send_json(
             room_error_message(error.code, error.message)
         )
@@ -227,6 +257,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             websocket,
         )
         if cleanup.removed_room_id is not None:
+            logger.info(
+                "room_close room_id=%s username=%s reason=disconnect",
+                cleanup.removed_room_id,
+                user.username,
+            )
             matches: MatchManager = websocket.app.state.match_manager
             await matches.cleanup_room(cleanup.removed_room_id)
         for notification in cleanup.notifications:

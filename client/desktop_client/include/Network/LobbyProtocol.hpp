@@ -53,6 +53,22 @@ struct MatchReadyEvent {
     std::string opponent;
     unsigned long long revision = 0;
     GameStateSnapshot state;
+    std::string gameStartsAt;
+};
+struct MatchCountdownEvent {
+    std::string roomId;
+    std::string value;
+    std::string gameStartsAt;
+};
+struct MatchStartedEvent {
+    std::string roomId;
+    unsigned long long revision = 0;
+    GameStateSnapshot state;
+    std::string gameStartsAt;
+};
+struct MatchCancelledEvent {
+    std::string roomId;
+    std::string reason;
 };
 struct MatchSnapshotEvent {
     std::string roomId;
@@ -89,6 +105,9 @@ using LobbyEvent = std::variant<
     GameStartedEvent,
     WatchingGameEvent,
     MatchReadyEvent,
+    MatchCountdownEvent,
+    MatchStartedEvent,
+    MatchCancelledEvent,
     MatchSnapshotEvent,
     MatchStateEvent,
     MoveResultEvent,

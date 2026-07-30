@@ -8,6 +8,8 @@ enum class LobbyActionType {
     None,
     FocusUsername,
     FocusPassword,
+    FocusConfirmPassword,
+    ToggleAuthMode,
     Login,
     Register,
     OpenCreateRoom,

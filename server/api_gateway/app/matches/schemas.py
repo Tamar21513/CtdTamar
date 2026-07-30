@@ -8,6 +8,7 @@ def match_ready_message(
     opponent: str,
     revision: int,
     state: dict[str, Any],
+    game_starts_at: str,
 ) -> dict[str, Any]:
     return {
         "type": "match_ready",
@@ -16,6 +17,42 @@ def match_ready_message(
         "opponent": opponent,
         "revision": revision,
         "state": state,
+        "game_starts_at": game_starts_at,
+    }
+
+
+def match_countdown_message(
+    room_id: UUID, value: int | str, game_starts_at: str
+) -> dict[str, Any]:
+    return {
+        "type": "match_countdown",
+        "room_id": str(room_id),
+        "phase": "go" if value == "GO" else "countdown",
+        "value": value,
+        "game_starts_at": game_starts_at,
+    }
+
+
+def match_started_message(
+    room_id: UUID,
+    game_starts_at: str,
+    revision: int,
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "type": "match_started",
+        "room_id": str(room_id),
+        "game_starts_at": game_starts_at,
+        "revision": revision,
+        "state": state,
+    }
+
+
+def match_cancelled_message(room_id: UUID) -> dict[str, str]:
+    return {
+        "type": "match_cancelled",
+        "room_id": str(room_id),
+        "reason": "player_disconnected_before_start",
     }
 
 

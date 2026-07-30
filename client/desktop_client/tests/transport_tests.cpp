@@ -129,6 +129,28 @@ TEST_CASE("ApiClient parses registration login me and logout") {
     }
 }
 
+TEST_CASE("ApiClient registration request contains only username and password") {
+    auto transport = std::make_shared<FakeHttpTransport>();
+    transport->responses.push_back(userResponse(201));
+    SessionCookieJar jar;
+    ApiClient api({}, jar, transport);
+    CHECK(api.registerUser("alice", "SecretPassword!").succeeded());
+
+    REQUIRE(transport->requests.size() == 1);
+    const auto& request = transport->requests.front();
+    CHECK(request.url.find("/auth/register") != std::string::npos);
+    const auto body = boost::json::parse(request.body).as_object();
+    CHECK(body.size() == 2);
+    CHECK(body.contains("username"));
+    CHECK(body.contains("password"));
+    CHECK_FALSE(body.contains("confirm_password"));
+    CHECK_FALSE(body.contains("confirmPassword"));
+    CHECK(std::string(body.at("username").as_string()) == "alice");
+    CHECK(
+        std::string(body.at("password").as_string()) ==
+        "SecretPassword!");
+}
+
 TEST_CASE("ApiClient exposes generic failed login without password") {
     auto transport = std::make_shared<FakeHttpTransport>();
     transport->responses.push_back({
@@ -316,6 +338,7 @@ TEST_CASE("authoritative snapshots and results parse") {
     auto ready = LobbyProtocol::parse(
         R"({"type":"match_ready","room_id":"room-1",)"
         R"("color":"white","opponent":"bob","revision":1,)"
+        R"("game_starts_at":"2026-07-30T12:00:00Z",)"
         "\"state\":" + state + "}");
     INFO(ready.error);
     REQUIRE(ready.event.has_value());
@@ -324,6 +347,18 @@ TEST_CASE("authoritative snapshots and results parse") {
     CHECK(event.color == "white");
     CHECK(event.revision == 1);
     CHECK(event.state.pieces.size() == 1);
+    CHECK(event.gameStartsAt == "2026-07-30T12:00:00Z");
+
+    auto countdown = LobbyProtocol::parse(
+        R"({"type":"match_countdown","room_id":"room-1",)"
+        R"("value":2,"game_starts_at":"2026-07-30T12:00:00Z"})");
+    REQUIRE(countdown.event.has_value());
+    CHECK(std::get<MatchCountdownEvent>(*countdown.event).value == "2");
+    auto go = LobbyProtocol::parse(
+        R"({"type":"match_countdown","room_id":"room-1",)"
+        R"("value":"GO","game_starts_at":"2026-07-30T12:00:00Z"})");
+    REQUIRE(go.event.has_value());
+    CHECK(std::get<MatchCountdownEvent>(*go.event).value == "GO");
 
     auto result = LobbyProtocol::parse(
         R"({"type":"move_result","room_id":"room-1",)"

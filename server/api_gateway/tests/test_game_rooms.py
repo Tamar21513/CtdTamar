@@ -64,6 +64,10 @@ def start_public_game(
     )
     host_started = host_socket.receive_json()
     guest_started = guest_socket.receive_json()
+    while host_socket.receive_json()["type"] != "match_started":
+        pass
+    while guest_socket.receive_json()["type"] != "match_started":
+        pass
     return (
         host_context,
         host_socket,
@@ -500,9 +504,10 @@ def test_waiting_room_cannot_be_watched_and_player_cannot_spectate(
             guest.send_json(
                 {"type": "watch_game", "room_id": room["room_id"]}
             )
-            assert guest.receive_json()["code"] == (
-                "player_cannot_spectate"
-            )
+            response = guest.receive_json()
+            while response.get("type") == "match_countdown":
+                response = guest.receive_json()
+            assert response["code"] == "player_cannot_spectate"
 
 
 def test_waiting_disconnect_removes_room_and_hidden_code(

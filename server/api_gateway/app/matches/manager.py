@@ -1,4 +1,7 @@
 import asyncio
+import logging
+import time
+from datetime import datetime, timezone
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -13,11 +16,17 @@ from app.matches.allocator import (
 from app.matches.bridge import GameServerBridge
 from app.matches.schemas import (
     match_ready_message,
+    match_countdown_message,
+    match_started_message,
+    match_cancelled_message,
     match_snapshot_message,
     match_state_message,
     move_result_message,
 )
 from app.rooms.models import GameRoom
+
+
+logger = logging.getLogger(__name__)
 
 
 class MatchOperationError(RuntimeError):
@@ -40,6 +49,9 @@ class ActiveMatch:
     bridge: MatchBridge
     revision: int
     snapshot: dict[str, Any]
+    game_starts_at: float
+    game_starts_at_iso: str
+    countdown_task: asyncio.Task | None = None
     sequence_owners: dict[tuple[str, int], WebSocket] = field(
         default_factory=dict
     )
@@ -72,12 +84,20 @@ class MatchManager:
 
     async def start_match(self, room: GameRoom) -> None:
         if room.white is None or room.black is None:
+            logger.warning(
+                "match_reject room_id=%s code=room_not_ready",
+                room.room_id,
+            )
             raise MatchOperationError(
                 "room_not_ready", "The room needs two players."
             )
         try:
             await self._allocator.acquire()
         except MatchUnavailableError as error:
+            logger.warning(
+                "match_reject room_id=%s code=match_unavailable",
+                room.room_id,
+            )
             raise MatchOperationError(
                 "match_unavailable",
                 "The game server is already hosting a match.",
@@ -94,7 +114,14 @@ class MatchManager:
                 room.black.username,
                 handle,
             )
-            match = ActiveMatch(room, bridge, 1, snapshot)
+            game_starts_at = time.time() + 3.8
+            game_starts_at_iso = datetime.fromtimestamp(
+                game_starts_at, timezone.utc
+            ).isoformat().replace("+00:00", "Z")
+            match = ActiveMatch(
+                room, bridge, 1, snapshot, game_starts_at,
+                game_starts_at_iso,
+            )
             async with self._lock:
                 self._matches[room.room_id] = match
             await self._send(
@@ -105,6 +132,7 @@ class MatchManager:
                     room.black.username,
                     1,
                     snapshot,
+                    game_starts_at_iso,
                 ),
             )
             await self._send(
@@ -115,9 +143,23 @@ class MatchManager:
                     room.white.username,
                     1,
                     snapshot,
+                    game_starts_at_iso,
                 ),
             )
+            match.countdown_task = asyncio.create_task(
+                self._run_countdown(room.room_id)
+            )
+            logger.info(
+                "match_start room_id=%s white=%s black=%s",
+                room.room_id,
+                room.white.username,
+                room.black.username,
+            )
         except Exception:
+            logger.error(
+                "match_reject room_id=%s code=game_server_unavailable",
+                room.room_id,
+            )
             await bridge.close()
             await self._allocator.release()
             raise MatchOperationError(
@@ -137,10 +179,89 @@ class MatchManager:
                     "match_not_found",
                     "The authoritative match is not available.",
                 )
-            message = match_snapshot_message(
-                room_id, match.revision, match.snapshot
+            if time.time() < match.game_starts_at:
+                message = match_ready_message(
+                    room_id, "spectator", "", match.revision,
+                    match.snapshot, match.game_starts_at_iso
+                )
+            else:
+                message = match_snapshot_message(
+                    room_id, match.revision, match.snapshot
+                )
+            countdown = (
+                match_countdown_message(
+                    room_id,
+                    self._countdown_value(match.game_starts_at),
+                    match.game_starts_at_iso,
+                )
+                if time.time() < match.game_starts_at
+                else None
             )
         await self._send(websocket, message)
+        if countdown is not None:
+            await self._send(websocket, countdown)
+
+    @staticmethod
+    def _countdown_value(game_starts_at: float) -> int | str:
+        remaining = game_starts_at - time.time()
+        if remaining <= 0.8:
+            return "GO"
+        if remaining <= 1.8:
+            return 1
+        if remaining <= 2.8:
+            return 2
+        return 3
+
+    async def _run_countdown(self, room_id: UUID) -> None:
+        for value, elapsed in ((3, 0.0), (2, 1.0), (1, 2.0),
+                               ("GO", 3.0)):
+            async with self._lock:
+                match = self._matches.get(room_id)
+                if match is None:
+                    return
+                delay = (
+                    match.game_starts_at - 3.8 + elapsed - time.time()
+                )
+                participants = [
+                    match.room.white, match.room.black,
+                    *match.room.spectators.values(),
+                ]
+                message = match_countdown_message(
+                    room_id, value, match.game_starts_at_iso
+                )
+            if delay > 0:
+                await asyncio.sleep(delay)
+            await asyncio.gather(*(
+                self._send(p.websocket, message)
+                for p in participants if p is not None
+            ))
+        async with self._lock:
+            match = self._matches.get(room_id)
+            if match is None:
+                return
+            delay = match.game_starts_at - time.time()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        async with self._lock:
+            match = self._matches.get(room_id)
+            if match is None:
+                return
+            message = match_started_message(
+                room_id, match.game_starts_at_iso,
+                match.revision, match.snapshot
+            )
+            participants = [
+                match.room.white, match.room.black,
+                *match.room.spectators.values(),
+            ]
+        await asyncio.gather(*(
+            self._send(p.websocket, message)
+            for p in participants if p is not None
+        ))
+        async with self._lock:
+            match = self._matches.get(room_id)
+            if match is not None:
+                match.countdown_task = None
 
     async def move(
         self,
@@ -176,6 +297,11 @@ class MatchManager:
             if match is None:
                 raise MatchOperationError(
                     "match_not_found", "The match is not active."
+                )
+            if time.time() < match.game_starts_at:
+                raise MatchOperationError(
+                    "match_not_started",
+                    "The match countdown is still active.",
                 )
             room = match.room
             if room.white and room.white.user_id == user_id:
@@ -238,6 +364,11 @@ class MatchManager:
             if match is None:
                 raise MatchOperationError(
                     "match_not_found", "The match is not active."
+                )
+            if time.time() < match.game_starts_at:
+                raise MatchOperationError(
+                    "match_not_started",
+                    "The match countdown is still active.",
                 )
             room = match.room
             if room.white and room.white.user_id == user_id:
@@ -322,6 +453,9 @@ class MatchManager:
             match = self._matches.pop(room_id, None)
         if match is None:
             return
+        logger.info("match_finish room_id=%s", room_id)
+        if match.countdown_task is not None:
+            match.countdown_task.cancel()
         if self._match_ended_handler is not None:
             await self._match_ended_handler(room_id)
         await match.bridge.close()
@@ -331,5 +465,22 @@ class MatchManager:
         async with self._lock:
             match = self._matches.pop(room_id, None)
         if match is not None:
+            before_start = time.time() < match.game_starts_at
+            if match.countdown_task is not None:
+                match.countdown_task.cancel()
+            if before_start:
+                logger.warning("match_cancel room_id=%s", room_id)
+                remaining = [
+                    match.room.white, match.room.black,
+                    *match.room.spectators.values(),
+                ]
+                await asyncio.gather(*(
+                    self._send(
+                        participant.websocket,
+                        match_cancelled_message(room_id),
+                    )
+                    for participant in remaining
+                    if participant is not None
+                ))
             await match.bridge.close()
             await self._allocator.release()

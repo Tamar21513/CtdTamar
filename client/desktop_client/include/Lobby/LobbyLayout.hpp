@@ -15,6 +15,8 @@ struct LobbyLayoutResult {
     cv::Rect authenticationPanel;
     cv::Rect usernameField;
     cv::Rect passwordField;
+    cv::Rect confirmPasswordField;
+    cv::Rect authModeToggle;
     cv::Rect loginButton;
     cv::Rect registerButton;
     cv::Rect createRoomButton;
@@ -45,7 +47,8 @@ public:
         int waitingCardCount,
         int activeCardCount,
         int waitingPage = 0,
-        int activePage = 0) const;
+        int activePage = 0,
+        bool registrationMode = false) const;
 
     int columnsForWidth(int width) const;
     static cv::Rect cardActionButton(const cv::Rect& card);

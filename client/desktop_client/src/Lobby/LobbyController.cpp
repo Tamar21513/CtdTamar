@@ -1,11 +1,36 @@
 #include "Lobby/LobbyController.hpp"
 
+#include "Logging/FileLogger.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <type_traits>
 
 namespace ctd::lobby {
+namespace {
+
+std::string authResultReason(const ctd::network::AuthResult& result) {
+    using ctd::network::AuthResultKind;
+    if (result.succeeded()) {
+        return "success";
+    }
+    if (!result.errorCode.empty()) {
+        return result.errorCode;
+    }
+    switch (result.kind) {
+        case AuthResultKind::TransportError:
+            return "transport_error";
+        case AuthResultKind::InvalidResponse:
+            return "invalid_response";
+        case AuthResultKind::Unauthorized:
+            return "unauthorized";
+        default:
+            return "unknown_error";
+    }
+}
+
+}  // namespace
 
 LobbyController::LobbyController(
     LobbyApplicationState& state,
@@ -19,6 +44,8 @@ LobbyController::~LobbyController() {
     }
     std::fill(password_.begin(), password_.end(), '\0');
     password_.clear();
+    std::fill(confirmPassword_.begin(), confirmPassword_.end(), '\0');
+    confirmPassword_.clear();
 }
 
 void LobbyController::beginAuthentication(bool registration) {
@@ -62,9 +89,21 @@ void LobbyController::finishAuthentication(
     const bool registration =
         state_.view().pendingAction ==
             PendingLobbyAction::Register;
+    const std::string logMessage =
+        "auth attempt username=" + outcome.username +
+        " mode=" + (registration ? "register" : "login") +
+        " result=" + authResultReason(outcome.result);
+    if (outcome.result.succeeded()) {
+        ctd::logging::defaultLogger().info(logMessage);
+    } else {
+        ctd::logging::defaultLogger().warn(logMessage);
+    }
     std::fill(password_.begin(), password_.end(), '\0');
     password_.clear();
+    std::fill(confirmPassword_.begin(), confirmPassword_.end(), '\0');
+    confirmPassword_.clear();
     state_.editableForInput().passwordLength = 0;
+    state_.editableForInput().confirmPasswordLength = 0;
     if (!outcome.result.succeeded() || !outcome.result.user) {
         state_.authenticationFailed(
             authErrorMessage(outcome.result, registration));
@@ -99,10 +138,51 @@ void LobbyController::handle(const LobbyAction& action) {
         case LobbyActionType::FocusPassword:
             view.focusedField = AuthenticationField::Password;
             break;
+        case LobbyActionType::FocusConfirmPassword:
+            if (view.authMode == AuthenticationMode::Register) {
+                view.focusedField =
+                    AuthenticationField::ConfirmPassword;
+            }
+            break;
+        case LobbyActionType::ToggleAuthMode:
+            if (authenticationTaskActive_ ||
+                view.pendingAction != PendingLobbyAction::None) {
+                break;
+            }
+            if (view.authMode == AuthenticationMode::Login) {
+                view.authMode = AuthenticationMode::Register;
+            } else {
+                view.authMode = AuthenticationMode::Login;
+                if (view.focusedField ==
+                        AuthenticationField::ConfirmPassword) {
+                    view.focusedField = AuthenticationField::Password;
+                }
+            }
+            std::fill(
+                confirmPassword_.begin(),
+                confirmPassword_.end(), '\0');
+            confirmPassword_.clear();
+            view.confirmPasswordLength = 0;
+            view.visibleError.clear();
+            break;
         case LobbyActionType::Login:
             beginAuthentication(false);
             break;
         case LobbyActionType::Register:
+            if (view.authMode == AuthenticationMode::Register) {
+                if (authenticationTaskActive_ ||
+                    view.pendingAction != PendingLobbyAction::None) {
+                    break;
+                }
+                if (confirmPassword_.empty()) {
+                    state_.showError("Confirm your password.");
+                    break;
+                }
+                if (confirmPassword_ != password_) {
+                    state_.showError("Passwords do not match.");
+                    break;
+                }
+            }
             beginAuthentication(true);
             break;
         case LobbyActionType::OpenCreateRoom:
@@ -147,6 +227,8 @@ void LobbyController::handle(const LobbyAction& action) {
                         : PendingLobbyAction::CreatePublicRoom) &&
                 !transport_.createRoom(name, hidden)) {
                 state_.showError("Could not create the room.");
+                ctd::logging::defaultLogger().warn(
+                    "room create failed name=" + name);
             }
             break;
         }
@@ -162,6 +244,8 @@ void LobbyController::handle(const LobbyAction& action) {
                     PendingLobbyAction::JoinHiddenRoom) &&
                 !transport_.joinHiddenRoom(code)) {
                 state_.showError("Could not join the hidden room.");
+                ctd::logging::defaultLogger().warn(
+                    "room join failed code=" + code);
             }
             break;
         }
@@ -176,6 +260,8 @@ void LobbyController::handle(const LobbyAction& action) {
                     action.value) &&
                 !transport_.joinPublicRoom(action.value)) {
                 state_.showError("Could not join the room.");
+                ctd::logging::defaultLogger().warn(
+                    "room join failed id=" + action.value);
             }
             break;
         case LobbyActionType::WatchRoom:
@@ -184,6 +270,8 @@ void LobbyController::handle(const LobbyAction& action) {
                     action.value) &&
                 !transport_.watchRoom(action.value)) {
                 state_.showError("Could not watch the room.");
+                ctd::logging::defaultLogger().warn(
+                    "room watch failed id=" + action.value);
             }
             break;
         case LobbyActionType::BackToLobby:
@@ -204,6 +292,10 @@ void LobbyController::handle(const LobbyAction& action) {
             transport_.logout();
             std::fill(password_.begin(), password_.end(), '\0');
             password_.clear();
+            std::fill(
+                confirmPassword_.begin(),
+                confirmPassword_.end(), '\0');
+            confirmPassword_.clear();
             state_.resetForLogout();
             break;
         case LobbyActionType::NextWaitingPage:
@@ -241,10 +333,24 @@ void LobbyController::inputCharacter(char value) {
                 view.usernameInput.push_back(value);
             }
         } else if (
+            view.focusedField ==
+                AuthenticationField::ConfirmPassword &&
+            view.authMode == AuthenticationMode::Register) {
+            if (std::isprint(static_cast<unsigned char>(value)) &&
+                confirmPassword_.size() < 128) {
+                confirmPassword_.push_back(value);
+                view.confirmPasswordLength = confirmPassword_.size();
+                view.visibleError.clear();
+            }
+        } else if (
+            view.focusedField == AuthenticationField::Password &&
             std::isprint(static_cast<unsigned char>(value)) &&
             password_.size() < 128) {
             password_.push_back(value);
             view.passwordLength = password_.size();
+            if (view.authMode == AuthenticationMode::Register) {
+                view.visibleError.clear();
+            }
         }
     } else if (view.modal == LobbyModal::CreateRoom) {
         if (std::isprint(static_cast<unsigned char>(value))) {
@@ -275,10 +381,25 @@ void LobbyController::backspace() {
             if (!view.usernameInput.empty()) {
                 view.usernameInput.pop_back();
             }
-        } else if (!password_.empty()) {
+        } else if (
+            view.focusedField ==
+                AuthenticationField::ConfirmPassword &&
+            view.authMode == AuthenticationMode::Register) {
+            if (!confirmPassword_.empty()) {
+                confirmPassword_.back() = '\0';
+                confirmPassword_.pop_back();
+                view.confirmPasswordLength = confirmPassword_.size();
+                view.visibleError.clear();
+            }
+        } else if (
+            view.focusedField == AuthenticationField::Password &&
+            !password_.empty()) {
             password_.back() = '\0';
             password_.pop_back();
             view.passwordLength = password_.size();
+            if (view.authMode == AuthenticationMode::Register) {
+                view.visibleError.clear();
+            }
         }
     } else if (
         view.modal == LobbyModal::CreateRoom &&
@@ -289,6 +410,37 @@ void LobbyController::backspace() {
         view.modal == LobbyModal::JoinHiddenRoom &&
         !view.hiddenRoomCodeInput.empty()) {
         view.hiddenRoomCodeInput.pop_back();
+    }
+}
+
+void LobbyController::handleTab() {
+    const auto& view = state_.view();
+    if (view.screen != LobbyScreen::Authentication) {
+        return;
+    }
+    LobbyActionType next = LobbyActionType::FocusUsername;
+    if (view.focusedField == AuthenticationField::Username) {
+        next = LobbyActionType::FocusPassword;
+    } else if (view.focusedField == AuthenticationField::Password) {
+        next = view.authMode == AuthenticationMode::Register
+            ? LobbyActionType::FocusConfirmPassword
+            : LobbyActionType::FocusUsername;
+    }
+    handle({next, {}});
+}
+
+void LobbyController::handleEnter() {
+    const auto& view = state_.view();
+    if (view.modal == LobbyModal::CreateRoom) {
+        handle({LobbyActionType::SubmitCreateRoom, {}});
+    } else if (view.modal == LobbyModal::JoinHiddenRoom) {
+        handle({LobbyActionType::SubmitHiddenCode, {}});
+    } else if (view.screen == LobbyScreen::Authentication) {
+        handle({
+            view.authMode == AuthenticationMode::Register
+                ? LobbyActionType::Register
+                : LobbyActionType::Login,
+            {}});
     }
 }
 
@@ -363,6 +515,7 @@ std::string LobbyController::normalizeHiddenCode(
 void LobbyController::gameBoardClick(int row, int col) {
     auto& view = state_.editableForInput();
     if (!view.match || view.match->spectator ||
+        view.match->phase != MatchPhase::Playing ||
         view.screen != LobbyScreen::Game ||
         row < 0 || row > 7 || col < 0 || col > 7) {
         return;
@@ -419,6 +572,7 @@ void LobbyController::gameBoardClick(int row, int col) {
 void LobbyController::gameBoardJump(int row, int col) {
     auto& view = state_.editableForInput();
     if (!view.match || view.match->spectator ||
+        view.match->phase != MatchPhase::Playing ||
         view.screen != LobbyScreen::Game ||
         row < 0 || row > 7 || col < 0 || col > 7) {
         return;

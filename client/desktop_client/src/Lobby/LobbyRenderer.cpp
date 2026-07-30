@@ -177,6 +177,20 @@ void LobbyRenderer::drawAuthentication(
         std::string(view.passwordLength, '*'),
         view.focusedField == AuthenticationField::Password,
         "at least 10 characters");
+    if (view.authMode == AuthenticationMode::Register) {
+        text(
+            frame, "CONFIRM PASSWORD",
+            {layout.confirmPasswordField.x,
+             layout.confirmPasswordField.y - 10},
+            0.42, Muted, 1);
+        inputField(
+            frame,
+            layout.confirmPasswordField,
+            std::string(view.confirmPasswordLength, '*'),
+            view.focusedField ==
+                AuthenticationField::ConfirmPassword,
+            "re-enter password");
+    }
     const bool enabled =
         view.pendingAction == PendingLobbyAction::None;
     button(
@@ -191,6 +205,15 @@ void LobbyRenderer::drawAuthentication(
             ? "CREATING..." : "REGISTER",
         false, enabled,
         hover(layout.registerButton, mouse));
+    text(
+        frame,
+        view.authMode == AuthenticationMode::Register
+            ? "Already have an account? Sign in"
+            : "Need an account? Register",
+        {layout.authModeToggle.x, layout.authModeToggle.y + 20},
+        0.44,
+        hover(layout.authModeToggle, mouse) ? Primary : Muted,
+        1);
     if (!view.visibleError.empty()) {
         text(
             frame,

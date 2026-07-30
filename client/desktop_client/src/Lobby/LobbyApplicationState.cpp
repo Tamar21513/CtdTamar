@@ -1,5 +1,7 @@
 #include "Lobby/LobbyApplicationState.hpp"
 
+#include "Logging/FileLogger.hpp"
+
 #include <algorithm>
 #include <type_traits>
 
@@ -45,6 +47,7 @@ void LobbyApplicationState::authenticationFailed(
     view_.statusMessage.clear();
     view_.visibleError = message;
     view_.passwordLength = 0;
+    view_.confirmPasswordLength = 0;
 }
 
 void LobbyApplicationState::authenticationSucceeded(
@@ -53,6 +56,7 @@ void LobbyApplicationState::authenticationSucceeded(
     view_.authenticatedUsername = username;
     view_.usernameInput = username;
     view_.passwordLength = 0;
+    view_.confirmPasswordLength = 0;
     view_.visibleError.clear();
     view_.statusMessage = "Connecting to lobby...";
     view_.pendingAction = PendingLobbyAction::None;
@@ -60,6 +64,12 @@ void LobbyApplicationState::authenticationSucceeded(
 
 void LobbyApplicationState::setConnectionState(
     ctd::network::WebSocketConnectionState state) {
+    if (state != view_.connectionState) {
+        ctd::logging::defaultLogger().info(
+            "connection state changed from=" +
+            connectionStatusText(view_.connectionState) +
+            " to=" + connectionStatusText(state));
+    }
     view_.connectionState = state;
     if (state == ctd::network::WebSocketConnectionState::Failed ||
         state == ctd::network::WebSocketConnectionState::Disconnected) {
@@ -103,6 +113,10 @@ void LobbyApplicationState::applyEvent(
                 view_.activePage = 0;
             } else if constexpr (
                 std::is_same_v<Event, ctd::network::RoomCreatedEvent>) {
+                ctd::logging::defaultLogger().info(
+                    "room created id=" + value.room.roomId +
+                    " name=" + value.room.name +
+                    " visibility=" + value.room.visibility);
                 view_.pendingAction = PendingLobbyAction::None;
                 view_.currentRoomName = value.room.name;
                 view_.roomNameInput.clear();
@@ -117,6 +131,9 @@ void LobbyApplicationState::applyEvent(
                 view_.pendingRoomId = value.room.roomId;
             } else if constexpr (
                 std::is_same_v<Event, ctd::network::GameStartedEvent>) {
+                ctd::logging::defaultLogger().info(
+                    "room joined id=" + value.roomId +
+                    " color=" + value.color);
                 view_.currentRoomName = value.roomName;
                 view_.roomReady = RoomReadyView{
                     value.roomId,
@@ -127,6 +144,8 @@ void LobbyApplicationState::applyEvent(
                 view_.pendingAction = PendingLobbyAction::None;
             } else if constexpr (
                 std::is_same_v<Event, ctd::network::WatchingGameEvent>) {
+                ctd::logging::defaultLogger().info(
+                    "room watch id=" + value.roomId);
                 view_.spectator = SpectatorView{
                     value.roomId,
                     value.roomName,
@@ -137,6 +156,9 @@ void LobbyApplicationState::applyEvent(
                 view_.pendingAction = PendingLobbyAction::None;
             } else if constexpr (
                 std::is_same_v<Event, ctd::network::MatchReadyEvent>) {
+                ctd::logging::defaultLogger().info(
+                    "match started id=" + value.roomId +
+                    " color=" + value.color);
                 view_.match = AuthoritativeMatchView{
                     value.roomId,
                     value.color,
@@ -146,9 +168,14 @@ void LobbyApplicationState::applyEvent(
                     value.state,
                     std::nullopt,
                     {},
-                    false};
+                    value.color == "spectator",
+                    MatchPhase::Countdown,
+                    value.gameStartsAt,
+                    "3"};
                 view_.pendingRoomId = value.roomId;
-                view_.screen = LobbyScreen::Game;
+                view_.screen = value.color == "spectator"
+                    ? LobbyScreen::SpectatorGame
+                    : LobbyScreen::Game;
                 view_.roomReady.reset();
                 view_.pendingAction = PendingLobbyAction::None;
             } else if constexpr (
@@ -162,10 +189,42 @@ void LobbyApplicationState::applyEvent(
                     value.state,
                     std::nullopt,
                     {},
-                    true};
+                    true,
+                    MatchPhase::Playing,
+                    {},
+                    {}};
                 view_.pendingRoomId = value.roomId;
                 view_.screen = LobbyScreen::SpectatorGame;
                 view_.pendingAction = PendingLobbyAction::None;
+            } else if constexpr (
+                std::is_same_v<Event, ctd::network::MatchCountdownEvent>) {
+                if (view_.match &&
+                    view_.match->roomId == value.roomId &&
+                    view_.match->phase == MatchPhase::Countdown &&
+                    view_.match->gameStartsAt == value.gameStartsAt) {
+                    view_.match->countdownValue = value.value;
+                }
+            } else if constexpr (
+                std::is_same_v<Event, ctd::network::MatchStartedEvent>) {
+                if (view_.match &&
+                    view_.match->roomId == value.roomId) {
+                    view_.match->revision = value.revision;
+                    view_.match->snapshot = value.state;
+                    view_.match->phase = MatchPhase::Playing;
+                    view_.match->countdownValue.clear();
+                }
+            } else if constexpr (
+                std::is_same_v<Event, ctd::network::MatchCancelledEvent>) {
+                ctd::logging::defaultLogger().warn(
+                    "match cancelled id=" + value.roomId +
+                    " reason=" + value.reason);
+                if (view_.match &&
+                    view_.match->roomId == value.roomId) {
+                    view_.match.reset();
+                    view_.screen = LobbyScreen::Lobby;
+                    view_.visibleError =
+                        "Match cancelled because a player disconnected.";
+                }
             } else if constexpr (
                 std::is_same_v<Event, ctd::network::MatchStateEvent>) {
                 if (view_.match &&
@@ -184,11 +243,15 @@ void LobbyApplicationState::applyEvent(
                 }
             } else if constexpr (
                 std::is_same_v<Event, ctd::network::OpponentDisconnectedEvent>) {
+                ctd::logging::defaultLogger().warn(
+                    "opponent disconnected id=" + value.roomId);
                 view_.visibleError = "The opponent disconnected.";
                 view_.pendingAction = PendingLobbyAction::None;
             } else if constexpr (
                 std::is_same_v<Event, ctd::network::RoomStatusEvent>) {
                 if (value.status == "removed") {
+                    ctd::logging::defaultLogger().info(
+                        "room removed id=" + value.roomId);
                     view_.screen = LobbyScreen::Lobby;
                     view_.visibleError =
                         "The room is no longer available.";

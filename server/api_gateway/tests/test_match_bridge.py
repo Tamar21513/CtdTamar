@@ -100,6 +100,56 @@ async def test_players_share_snapshot_and_colors() -> None:
     assert white["revision"] == black["revision"] == 1
     assert white["color"] == "white"
     assert black["color"] == "black"
+    assert white["game_starts_at"] == black["game_starts_at"]
+
+
+@async_test
+async def test_countdown_blocks_actions_and_starts_once() -> None:
+    FakeBridge.instances.clear()
+    room = active_room()
+    manager = MatchManager("game", 54000, FakeBridge)
+    await manager.start_match(room)
+    task = manager._matches[room.room_id].countdown_task
+    with pytest.raises(MatchOperationError) as move_error:
+        await manager.move(
+            room.room_id, room.white.user_id,
+            room.white.websocket, 1,
+            {"row": 6, "col": 4}, {"row": 5, "col": 4},
+        )
+    assert move_error.value.code == "match_not_started"
+    with pytest.raises(MatchOperationError) as jump_error:
+        await manager.jump(
+            room.room_id, room.white.user_id,
+            room.white.websocket, 2, {"row": 6, "col": 4},
+        )
+    assert jump_error.value.code == "match_not_started"
+    await asyncio.sleep(3.9)
+    messages = room.white.websocket.messages
+    assert [m["value"] for m in messages
+            if m["type"] == "match_countdown"] == [3, 2, 1, "GO"]
+    assert messages[-1]["type"] == "match_started"
+    assert manager._matches[room.room_id].revision == 1
+    assert manager._matches[room.room_id].countdown_task is None
+    assert task is not None
+    await manager.cleanup_room(room.room_id)
+
+
+@async_test
+async def test_disconnect_cleanup_cancels_prestart_match() -> None:
+    FakeBridge.instances.clear()
+    room = active_room()
+    manager = MatchManager("game", 54000, FakeBridge)
+    await manager.start_match(room)
+    task = manager._matches[room.room_id].countdown_task
+    await manager.cleanup_room(room.room_id)
+    await asyncio.sleep(0)
+    assert task is not None and task.cancelled()
+    assert FakeBridge.instances[-1].closed
+    assert room.white.websocket.messages[-1] == {
+        "type": "match_cancelled",
+        "room_id": str(room.room_id),
+        "reason": "player_disconnected_before_start",
+    }
 
 
 @async_test
@@ -108,6 +158,7 @@ async def test_move_is_forwarded_and_cpp_result_is_preserved() -> None:
     room = active_room()
     manager = MatchManager("game", 54000, FakeBridge)
     await manager.start_match(room)
+    manager._matches[room.room_id].game_starts_at = 0
     bridge = FakeBridge.instances[-1]
     source = {"row": 6, "col": 4}
     destination = {"row": 5, "col": 4}
@@ -154,6 +205,7 @@ async def test_jump_is_forwarded_as_dedicated_action() -> None:
     room = active_room()
     manager = MatchManager("game", 54000, FakeBridge)
     await manager.start_match(room)
+    manager._matches[room.room_id].game_starts_at = 0
     bridge = FakeBridge.instances[-1]
     cell = {"row": 6, "col": 4}
     before = INITIAL_STATE["pieces"][0].copy()
@@ -176,6 +228,7 @@ async def test_spectator_snapshot_updates_and_read_only() -> None:
     room.spectators[1] = spectator
     manager = MatchManager("game", 54000, FakeBridge)
     await manager.start_match(room)
+    manager._matches[room.room_id].game_starts_at = 0
     await manager.watch_match(
         room.room_id, spectator.websocket
     )

@@ -5,10 +5,10 @@
 #include <boost/json.hpp>
 
 #include <stdexcept>
+#include <regex>
 
 namespace ctd::network {
 namespace {
-
 namespace json = boost::json;
 
 const json::object& requiredObject(
@@ -39,6 +39,17 @@ std::string requiredString(
         throw std::invalid_argument(std::string("Missing string: ") + key);
     }
     return std::string(value->as_string());
+}
+
+std::string requiredUtcTimestamp(
+    const json::object& object, const char* key) {
+    const auto value = requiredString(object, key);
+    static const std::regex pattern(
+        R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$)");
+    if (!std::regex_match(value, pattern)) {
+        throw std::invalid_argument("Invalid UTC timestamp");
+    }
+    return value;
 }
 
 int optionalInteger(
@@ -267,7 +278,36 @@ ProtocolParseResult LobbyProtocol::parse(
                 requiredString(object, "color"),
                 requiredString(object, "opponent"),
                 requiredUnsigned(object, "revision"),
-                parseSnapshot(requiredObject(object, "state"))}}, {}};
+                parseSnapshot(requiredObject(object, "state")),
+                requiredUtcTimestamp(object, "game_starts_at")}}, {}};
+        }
+        if (type == "match_countdown") {
+            const auto* raw = object.if_contains("value");
+            std::string value;
+            if (raw && raw->is_int64() &&
+                raw->as_int64() >= 1 && raw->as_int64() <= 3) {
+                value = std::to_string(raw->as_int64());
+            } else if (raw && raw->is_string() &&
+                       raw->as_string() == "GO") {
+                value = "GO";
+            } else {
+                throw std::invalid_argument("Invalid countdown value");
+            }
+            return {LobbyEvent{MatchCountdownEvent{
+                requiredString(object, "room_id"), value,
+                requiredUtcTimestamp(object, "game_starts_at")}}, {}};
+        }
+        if (type == "match_started") {
+            return {LobbyEvent{MatchStartedEvent{
+                requiredString(object, "room_id"),
+                requiredUnsigned(object, "revision"),
+                parseSnapshot(requiredObject(object, "state")),
+                requiredUtcTimestamp(object, "game_starts_at")}}, {}};
+        }
+        if (type == "match_cancelled") {
+            return {LobbyEvent{MatchCancelledEvent{
+                requiredString(object, "room_id"),
+                requiredString(object, "reason")}}, {}};
         }
         if (type == "match_snapshot") {
             return {LobbyEvent{MatchSnapshotEvent{

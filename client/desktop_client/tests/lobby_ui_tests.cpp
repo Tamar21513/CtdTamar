@@ -9,10 +9,14 @@
 #include "Graphics/Renderer.hpp"
 #include "Graphics/AnimationLibrary.hpp"
 #include "Graphics/VisualStateMachine.hpp"
+#include "Logging/FileLogger.hpp"
 
 #include <chrono>
 #include <cstdlib>
 #include <deque>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <thread>
 
 using namespace ctd::lobby;
@@ -694,11 +698,31 @@ TEST_CASE("Live multi-client native lobby flow") {
 TEST_CASE("match ready opens authoritative board and stores color") {
     LobbyApplicationState state;
     state.applyEvent(MatchReadyEvent{
-        "room-1", "white", "bob", 1, matchSnapshot()});
+        "room-1", "white", "bob", 1, matchSnapshot(),
+        "2026-07-30T12:00:00Z"});
     REQUIRE(state.view().match.has_value());
     CHECK(state.view().screen == LobbyScreen::Game);
     CHECK(state.view().match->assignedColor == "white");
     CHECK(state.view().match->snapshot.pieces.size() == 1);
+    CHECK(state.view().match->phase == MatchPhase::Countdown);
+    state.applyEvent(MatchCountdownEvent{
+        "room-1", "GO", "2026-07-30T12:00:00Z"});
+    CHECK(state.view().match->countdownValue == "GO");
+}
+
+TEST_CASE("countdown blocks all player board input") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    state.applyEvent(MatchReadyEvent{
+        "room-1", "white", "bob", 1, matchSnapshot(),
+        "2026-07-30T12:00:00Z"});
+    controller.gameBoardClick(6, 4);
+    controller.gameBoardClick(5, 4);
+    controller.gameBoardJump(6, 4);
+    CHECK(transport.sentMoves.empty());
+    CHECK(transport.sentJumps.empty());
+    CHECK_FALSE(state.view().match->selectedSource.has_value());
 }
 
 TEST_CASE("moves are sent without optimistic board mutation") {
@@ -706,7 +730,11 @@ TEST_CASE("moves are sent without optimistic board mutation") {
     FakeLobbyTransport transport;
     LobbyController controller(state, transport);
     state.applyEvent(MatchReadyEvent{
-        "room-1", "white", "bob", 1, matchSnapshot()});
+        "room-1", "white", "bob", 1, matchSnapshot(),
+        "2026-07-30T12:00:00Z"});
+    state.applyEvent(MatchStartedEvent{
+        "room-1", 1, matchSnapshot(),
+        "2026-07-30T12:00:00Z"});
     const auto before = state.view().match->snapshot;
     controller.gameBoardClick(6, 4);
     controller.gameBoardClick(5, 4);
@@ -722,7 +750,8 @@ TEST_CASE("moves are sent without optimistic board mutation") {
 TEST_CASE("rejection is displayed and stale revisions are ignored") {
     LobbyApplicationState state;
     state.applyEvent(MatchReadyEvent{
-        "room-1", "black", "alice", 3, matchSnapshot()});
+        "room-1", "black", "alice", 3, matchSnapshot(),
+        "2026-07-30T12:00:00Z"});
     state.applyEvent(MoveResultEvent{
         "room-1", 1, false, "not_your_piece"});
     CHECK(state.view().match->moveStatus ==
@@ -764,7 +793,11 @@ TEST_CASE("same-cell and explicit inputs use authoritative jump") {
     FakeLobbyTransport transport;
     LobbyController controller(state, transport);
     state.applyEvent(MatchReadyEvent{
-        "room-1", "white", "bob", 1, matchSnapshot()});
+        "room-1", "white", "bob", 1, matchSnapshot(),
+        "2026-07-30T12:00:00Z"});
+    state.applyEvent(MatchStartedEvent{
+        "room-1", 1, matchSnapshot(),
+        "2026-07-30T12:00:00Z"});
 
     controller.gameBoardClick(6, 4);
     controller.gameBoardClick(6, 4);
@@ -819,4 +852,310 @@ TEST_CASE("jump animation transitions through short rest to idle") {
     CHECK(machine.chooseState(
               PieceState::Idle, 0, 2000) ==
           VisualState::Idle);
+}
+
+namespace {
+
+void toggleToRegisterMode(LobbyController& controller) {
+    controller.handle({LobbyActionType::ToggleAuthMode, {}});
+}
+
+void typeConfirmPassword(
+    LobbyController& controller,
+    const std::string& value) {
+    controller.handle({LobbyActionType::FocusConfirmPassword, {}});
+    for (const char character : value) {
+        controller.inputCharacter(character);
+    }
+}
+
+}  // namespace
+
+TEST_CASE("Registration layout: Confirm Password only reserved in register mode") {
+    LobbyLayout calculator;
+    const auto loginLayout =
+        calculator.calculate(1366, 768, 0, 0, 0, 0, false);
+    CHECK(loginLayout.confirmPasswordField.area() == 0);
+    const auto registerLayout =
+        calculator.calculate(1366, 768, 0, 0, 0, 0, true);
+    CHECK(registerLayout.confirmPasswordField.area() > 0);
+    CHECK(
+        (registerLayout.confirmPasswordField &
+         registerLayout.passwordField).area() == 0);
+    CHECK(
+        (registerLayout.confirmPasswordField &
+         registerLayout.loginButton).area() == 0);
+}
+
+TEST_CASE("Toggling auth mode shows and hides Confirm Password") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+
+    CHECK(state.view().authMode == AuthenticationMode::Login);
+    toggleToRegisterMode(controller);
+    CHECK(state.view().authMode == AuthenticationMode::Register);
+    CHECK(state.view().confirmPasswordLength == 0);
+
+    toggleToRegisterMode(controller);
+    CHECK(state.view().authMode == AuthenticationMode::Login);
+    CHECK(state.view().confirmPasswordLength == 0);
+}
+
+TEST_CASE("Mouse click focuses Confirm Password only in register mode") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    LobbyInputMapper mapper;
+    LobbyLayout calculator;
+
+    const auto loginLayout =
+        calculator.calculate(1366, 768, 0, 0, 0, 0, false);
+    const cv::Point insideConfirmSlot(
+        loginLayout.authenticationPanel.x + 60,
+        loginLayout.authenticationPanel.y + 320);
+    const auto loginAction = mapper.mapClick(
+        insideConfirmSlot, state.view(), loginLayout);
+    CHECK(loginAction.type != LobbyActionType::FocusConfirmPassword);
+
+    toggleToRegisterMode(controller);
+    const auto registerLayout =
+        calculator.calculate(1366, 768, 0, 0, 0, 0, true);
+    const auto registerAction = mapper.mapClick(
+        cv::Point(
+            registerLayout.confirmPasswordField.x + 10,
+            registerLayout.confirmPasswordField.y + 10),
+        state.view(), registerLayout);
+    CHECK(
+        registerAction.type ==
+        LobbyActionType::FocusConfirmPassword);
+    controller.handle(registerAction);
+    CHECK(
+        state.view().focusedField ==
+        AuthenticationField::ConfirmPassword);
+}
+
+TEST_CASE(
+    "Clicking the physical REGISTER button reveals Confirm Password "
+    "before submitting") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    LobbyInputMapper mapper;
+    LobbyLayout calculator;
+
+    typeCredentials(controller, "alice", "StrongPassword!");
+
+    const auto loginLayout =
+        calculator.calculate(1366, 768, 0, 0, 0, 0, false);
+    const cv::Point registerButtonCenter(
+        loginLayout.registerButton.x + loginLayout.registerButton.width / 2,
+        loginLayout.registerButton.y + loginLayout.registerButton.height / 2);
+    const auto firstClick = mapper.mapClick(
+        registerButtonCenter, state.view(), loginLayout);
+    CHECK(firstClick.type == LobbyActionType::ToggleAuthMode);
+    controller.handle(firstClick);
+
+    CHECK(state.view().authMode == AuthenticationMode::Register);
+    CHECK(transport.registerCalls == 0);
+
+    const auto registerLayout =
+        calculator.calculate(1366, 768, 0, 0, 0, 0, true);
+    CHECK(registerLayout.confirmPasswordField.area() > 0);
+
+    typeConfirmPassword(controller, "StrongPassword!");
+    const cv::Point registerButtonCenterAgain(
+        registerLayout.registerButton.x +
+            registerLayout.registerButton.width / 2,
+        registerLayout.registerButton.y +
+            registerLayout.registerButton.height / 2);
+    const auto secondClick = mapper.mapClick(
+        registerButtonCenterAgain, state.view(), registerLayout);
+    CHECK(secondClick.type == LobbyActionType::Register);
+    controller.handle(secondClick);
+    waitForAuthentication(controller);
+    CHECK(transport.registerCalls == 1);
+    CHECK(state.view().screen == LobbyScreen::Connecting);
+}
+
+TEST_CASE("Tab reaches Confirm Password only in register mode") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+
+    controller.handle({LobbyActionType::FocusPassword, {}});
+    controller.handleTab();
+    CHECK(
+        state.view().focusedField ==
+        AuthenticationField::Username);
+
+    toggleToRegisterMode(controller);
+    controller.handle({LobbyActionType::FocusPassword, {}});
+    controller.handleTab();
+    CHECK(
+        state.view().focusedField ==
+        AuthenticationField::ConfirmPassword);
+    controller.handleTab();
+    CHECK(
+        state.view().focusedField ==
+        AuthenticationField::Username);
+}
+
+TEST_CASE("Confirm Password is masked and edits with backspace") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    toggleToRegisterMode(controller);
+    typeConfirmPassword(controller, "abcd");
+    CHECK(state.view().confirmPasswordLength == 4);
+    controller.backspace();
+    CHECK(state.view().confirmPasswordLength == 3);
+}
+
+TEST_CASE("Switching to login mode clears Confirm Password and its message") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    toggleToRegisterMode(controller);
+    typeCredentials(controller, "alice", "StrongPassword!");
+    typeConfirmPassword(controller, "DifferentPassword");
+    controller.handle({LobbyActionType::Register, {}});
+    CHECK(state.view().visibleError == "Passwords do not match.");
+
+    toggleToRegisterMode(controller);
+    CHECK(state.view().authMode == AuthenticationMode::Login);
+    CHECK(state.view().confirmPasswordLength == 0);
+    CHECK(state.view().visibleError.empty());
+
+    toggleToRegisterMode(controller);
+    CHECK(state.view().authMode == AuthenticationMode::Register);
+    CHECK(state.view().confirmPasswordLength == 0);
+}
+
+TEST_CASE("Empty Confirm Password blocks registration") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    toggleToRegisterMode(controller);
+    typeCredentials(controller, "alice", "StrongPassword!");
+    controller.handle({LobbyActionType::Register, {}});
+    CHECK(state.view().visibleError == "Confirm your password.");
+    CHECK(transport.registerCalls == 0);
+    CHECK(state.view().pendingAction == PendingLobbyAction::None);
+}
+
+TEST_CASE("Mismatched passwords block registration and message clears on edit") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    toggleToRegisterMode(controller);
+    typeCredentials(controller, "alice", "StrongPassword!");
+    typeConfirmPassword(controller, "StrongPasswordX");
+    controller.handle({LobbyActionType::Register, {}});
+    CHECK(state.view().visibleError == "Passwords do not match.");
+    CHECK(transport.registerCalls == 0);
+
+    controller.backspace();
+    CHECK(state.view().visibleError.empty());
+}
+
+TEST_CASE("Matching passwords allow registration with username and password only") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    toggleToRegisterMode(controller);
+    typeCredentials(controller, "alice", "StrongPassword!");
+    typeConfirmPassword(controller, "StrongPassword!");
+    controller.handle({LobbyActionType::Register, {}});
+    CHECK(state.view().visibleError.empty());
+    CHECK(state.view().pendingAction == PendingLobbyAction::Register);
+    waitForAuthentication(controller);
+    CHECK(transport.registerCalls == 1);
+    CHECK(transport.loginCalls == 1);
+    CHECK(state.view().screen == LobbyScreen::Connecting);
+    CHECK(state.view().confirmPasswordLength == 0);
+}
+
+TEST_CASE("Enter submits registration only when the form is valid") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    toggleToRegisterMode(controller);
+    typeCredentials(controller, "alice", "StrongPassword!");
+    typeConfirmPassword(controller, "Mismatch!");
+    controller.handleEnter();
+    CHECK(state.view().visibleError == "Passwords do not match.");
+    CHECK(transport.registerCalls == 0);
+
+    controller.handle({LobbyActionType::FocusConfirmPassword, {}});
+    while (state.view().confirmPasswordLength > 0) {
+        controller.backspace();
+    }
+    typeConfirmPassword(controller, "StrongPassword!");
+    controller.handleEnter();
+    waitForAuthentication(controller);
+    CHECK(transport.registerCalls == 1);
+    CHECK(state.view().screen == LobbyScreen::Connecting);
+}
+
+TEST_CASE("Enter in login mode still submits login, unchanged") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    typeCredentials(controller);
+    controller.handleEnter();
+    CHECK(state.view().pendingAction == PendingLobbyAction::Login);
+    waitForAuthentication(controller);
+    CHECK(transport.loginCalls == 1);
+    CHECK(transport.registerCalls == 0);
+}
+
+TEST_CASE("FileLogger writes ISO-8601 timestamped lines to a file") {
+    const auto path = std::filesystem::temp_directory_path() /
+        "ctd_logger_test" / "client_test.log";
+    std::filesystem::remove_all(path.parent_path());
+
+    std::string contents;
+    {
+        ctd::logging::FileLogger logger(path);
+        REQUIRE(logger.isEnabled());
+        logger.info("info message");
+        logger.warn("warn message");
+        logger.error("error message");
+    }  // logger destructed here, closing the file handle
+
+    std::ifstream file(path);
+    REQUIRE(file.is_open());
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    file.close();
+    contents = buffer.str();
+
+    CHECK(contents.find(" INFO info message") != std::string::npos);
+    CHECK(contents.find(" WARN warn message") != std::string::npos);
+    CHECK(contents.find(" ERROR error message") != std::string::npos);
+    // ISO-8601 UTC timestamp shape: YYYY-MM-DDTHH:MM:SS.mmmZ
+    CHECK(contents.find("T") != std::string::npos);
+    CHECK(contents.find("Z INFO") != std::string::npos);
+
+    std::filesystem::remove_all(path.parent_path());
+}
+
+TEST_CASE(
+    "FileLogger disables itself without throwing when the "
+    "target path cannot be opened for writing") {
+    const auto directoryPath = std::filesystem::temp_directory_path() /
+        "ctd_logger_test_invalid_target";
+    std::filesystem::remove_all(directoryPath);
+    std::filesystem::create_directories(directoryPath);
+
+    {
+        ctd::logging::FileLogger logger(directoryPath);
+        CHECK_FALSE(logger.isEnabled());
+        logger.info("must not throw or crash");
+        logger.warn("must not throw or crash");
+        logger.error("must not throw or crash");
+    }
+
+    std::filesystem::remove_all(directoryPath);
 }

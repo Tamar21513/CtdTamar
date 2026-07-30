@@ -54,7 +54,8 @@ void Renderer::render(
     const std::string& statusLine1,
     const std::string& statusLine2,
     RenderOverlayMode overlayMode,
-    bool showSpectatorBackButton
+    bool showSpectatorBackButton,
+    const std::string& countdownValue
 ) {
     const cv::Mat board = loadBoardImage();
     if (board.empty()) {
@@ -98,6 +99,9 @@ void Renderer::render(
     drawMoveHistory(canvas, whiteMoves, "WHITE MOVES", SIDE_PANEL_WIDTH + boardDisplaySize,
                     SCORE_PANEL_HEIGHT, SIDE_PANEL_WIDTH, boardDisplaySize);
     drawPieces(canvas, pieces);
+    if (!countdownValue.empty()) {
+        drawCountdown(canvas, countdownValue);
+    }
     if (gameOver) {
         drawGameOver(canvas);
     }
@@ -124,6 +128,36 @@ void Renderer::render(
             cv::LINE_AA);
     }
     cv::imshow(windowName, canvas);
+}
+
+void Renderer::drawCountdown(
+    cv::Mat& canvas, const std::string& value) const {
+    const cv::Rect boardRect(
+        SIDE_PANEL_WIDTH, SCORE_PANEL_HEIGHT,
+        boardDisplaySize, boardDisplaySize);
+    cv::Mat overlay = canvas.clone();
+    cv::rectangle(
+        overlay, boardRect, cv::Scalar(20, 20, 20), cv::FILLED);
+    cv::addWeighted(overlay, 0.28, canvas, 0.72, 0.0, canvas);
+    const double scale = value == "GO"
+        ? boardDisplaySize / 180.0
+        : boardDisplaySize / 135.0;
+    const int thickness = std::max(5, boardDisplaySize / 65);
+    int baseline = 0;
+    const cv::Size text = cv::getTextSize(
+        value, cv::FONT_HERSHEY_DUPLEX, scale,
+        thickness, &baseline);
+    const cv::Point origin(
+        boardRect.x + (boardRect.width - text.width) / 2,
+        boardRect.y + (boardRect.height + text.height) / 2);
+    cv::putText(
+        canvas, value, origin, cv::FONT_HERSHEY_DUPLEX,
+        scale, cv::Scalar(15, 15, 15), thickness + 6,
+        cv::LINE_AA);
+    cv::putText(
+        canvas, value, origin, cv::FONT_HERSHEY_DUPLEX,
+        scale, cv::Scalar(245, 220, 120), thickness,
+        cv::LINE_AA);
 }
 
 cv::Rect Renderer::spectatorBackButtonRect() {

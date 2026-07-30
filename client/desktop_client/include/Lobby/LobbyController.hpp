@@ -20,6 +20,8 @@ public:
     void handle(const LobbyAction& action);
     void inputCharacter(char value);
     void backspace();
+    void handleTab();
+    void handleEnter();
     void gameBoardClick(int row, int col);
     void gameBoardJump(int row, int col);
     void tick();
@@ -48,6 +50,7 @@ private:
     LobbyApplicationState& state_;
     ILobbyTransport& transport_;
     std::string password_;
+    std::string confirmPassword_;
     std::future<AuthenticationOutcome> authenticationTask_;
     bool authenticationTaskActive_ = false;
 };
