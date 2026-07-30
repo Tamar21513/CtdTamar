@@ -1,9 +1,7 @@
 # Stage 3B Authentication
 
-Stage 3B adds server-side registration, login, authenticated-user lookup, and
-logout to the FastAPI API Gateway. It does not connect the C++ client to
-authentication. The existing realtime TCP transport is unchanged; WebSocket
-transport belongs to a later stage.
+Registration, login, authenticated-user lookup, and logout are implemented by
+the native C++ Gateway. The authoritative realtime TCP transport is unchanged.
 
 ## Environment variables
 
@@ -23,27 +21,19 @@ Copy-Item .env.example .env
 
 ## Username and password policy
 
-Usernames are normalized with Unicode NFKC normalization and Unicode-aware
-case folding for lookup and uniqueness. Surrounding whitespace is removed from
-the stored display name. Usernames must contain 3–32 Unicode letters or
-numbers, with `_`, `-`, and `.` also allowed. Control characters and other
-punctuation are rejected.
+Surrounding ASCII whitespace is removed from usernames. Usernames must contain
+3–32 ASCII letters or numbers, with `_`, `-`, and `.` also allowed. Lookup and
+uniqueness are ASCII case-insensitive.
 
 Passwords must contain 10–128 characters and cannot be whitespace-only.
-Characters are not silently trimmed. Passwords are hashed with Argon2id using
-`argon2-cffi`; plaintext passwords are never stored.
+Characters are not silently trimmed. Passwords are hashed with libsodium
+Argon2id; plaintext passwords are never stored.
 
 ## Migrations
 
-```powershell
-docker compose run --rm api-gateway alembic upgrade head
-```
-
-When the service is running:
-
-```powershell
-docker compose exec api-gateway alembic upgrade head
-```
+The C++ Gateway applies the idempotent schema in
+`server/cpp_gateway/migrations/001_create_users.sql` at startup. It reuses the
+existing `users` table and never drops data.
 
 ## Authentication flow
 
@@ -99,7 +89,7 @@ idempotent and always returns `204`.
 ## Tests and TTL inspection
 
 ```powershell
-docker compose --profile test run --rm api-gateway-test pytest -q
+ctest --test-dir build -C Release --output-on-failure
 docker compose exec redis redis-cli --scan --pattern "ctd:session:*"
 ```
 

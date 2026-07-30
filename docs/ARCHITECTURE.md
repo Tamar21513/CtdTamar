@@ -6,9 +6,10 @@
 rules, timing, captures, scores, snapshots, lifecycle events, and TCP client
 sessions. It links to `ctd_shared` and Winsock, but not OpenCV.
 
-`server/api_gateway` is an independent FastAPI service. At this stage it
-exposes only `GET /health` and checks PostgreSQL and Redis connectivity. It
-does not make game-rule decisions.
+`server/cpp_gateway` is an independent native C++ service built on
+Boost.Asio, Beast, and JSON. It owns HTTP authentication, Redis sessions,
+authenticated WebSockets, lobby state, and rooms. It checks PostgreSQL and
+Redis through `GET /health`, but never makes game-rule decisions.
 
 ## Client
 

@@ -1,11 +1,15 @@
 # CTD
 
+The native API, authentication, WebSocket, and lobby service lives under
+`server/cpp_gateway`. See `docs/CPP_GATEWAY.md`.
+
 CTD is a networked Kung Fu Chess project with an authoritative C++ game
 server, an OpenCV client, and a local Docker Compose infrastructure stack.
 
 ## Repository layout
 
-- `server/api_gateway` — FastAPI health service.
+- `server/cpp_gateway` — native HTTP, authentication, WebSocket, and lobby
+  gateway.
 - `server/chess_server` — authoritative engine, rules, timing, TCP server, and
   server-side tests.
 - `client/desktop_client` — network client, OpenCV UI, renderer, animations, and
@@ -29,6 +33,7 @@ server, an OpenCV client, and a local Docker Compose infrastructure stack.
 Executables:
 
 - `build/server/chess_server/Release/ctd_server.exe`
+- `build/server/cpp_gateway/Release/ctd_cpp_gateway.exe`
 - `build/client/desktop_client/Release/ctd_client.exe`
 
 ## Run

@@ -1,17 +1,12 @@
 {
-  "name": "ctd",
+  "name": "ctd-cpp-gateway",
   "version-string": "3.0.0",
   "dependencies": [
+    "boost-asio",
     "boost-beast",
     "boost-json",
     "libpqxx",
     "libsodium",
-    "redis-plus-plus",
-    {
-      "name": "opencv4",
-      "features": [
-        "highgui"
-      ]
-    }
+    "redis-plus-plus"
   ]
 }

@@ -1,5 +1,8 @@
 # Stage 3E Native Client Transport
 
+Stage 3G keeps the same URLs and protocol while replacing the server with the
+native C++ Gateway.
+
 Stage 3E adds authentication and lobby transport to the existing native
 C++/OpenCV desktop client. It does not add lobby graphics and does not replace
 the existing TCP chess transport.

@@ -1,5 +1,8 @@
 # Stage 3D Game Rooms and Lobby
 
+Stage 3G ports this behavior to the mutex-protected native C++ `RoomManager`
+without changing the validated message shapes.
+
 Stage 3D provides backend-only lobby and game-room state through the
 authenticated `/ws` endpoint. It does not add a desktop lobby UI or connect
 rooms to the C++ chess server.
@@ -143,6 +146,5 @@ Redis-backed lobby state, multi-instance scaling, or UI.
 
 ```powershell
 docker compose config --quiet
-docker compose --profile test build api-gateway-test
-docker compose --profile test run --rm api-gateway-test pytest -q
+ctest --test-dir build -C Release --output-on-failure
 ```

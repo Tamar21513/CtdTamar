@@ -11,12 +11,10 @@ Run C++ tests:
 cmd /c """C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"" >nul && python server\chess_server\tests\run_tests.py"
 ```
 
-Run API health logic tests:
+Run the native Gateway tests:
 
 ```powershell
-Set-Location server\api_gateway
-python -m unittest discover -s tests -t . -v
-Set-Location ..\..
+.\build\server\cpp_gateway\Release\ctd_gateway_tests.exe
 ```
 
 Local `.env` values are never committed. Copy `.env.example` to `.env` for

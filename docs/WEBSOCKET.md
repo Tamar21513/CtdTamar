@@ -1,8 +1,10 @@
 # Stage 3C Authenticated WebSocket
 
-Stage 3C adds an authenticated WebSocket foundation to the FastAPI API
-Gateway. It does not carry chess moves and does not replace the existing C++
-TCP transport.
+Stage 3G implements this endpoint in the native asynchronous Boost.Beast
+Gateway while preserving authentication and message behavior.
+
+The endpoint does not carry chess moves and does not replace the existing C++
+authoritative TCP transport.
 
 ## Authentication
 
@@ -80,11 +82,10 @@ Run the isolated API Gateway integration suite:
 
 ```powershell
 docker compose config
-docker compose --profile test build api-gateway-test
-docker compose --profile test run --rm api-gateway-test pytest -q
+ctest --test-dir build -C Release --output-on-failure
 ```
 
-The test profile uses only `postgres-test` and `redis-test`.
+Live integration uses the Compose PostgreSQL and Redis services.
 
 ## Current limitations
 

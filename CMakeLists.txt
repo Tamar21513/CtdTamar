@@ -10,4 +10,5 @@ enable_testing()
 
 add_subdirectory(shared/cpp)
 add_subdirectory(server/chess_server)
+add_subdirectory(server/cpp_gateway)
 add_subdirectory(client/desktop_client)
