@@ -32,13 +32,22 @@ LobbyAction LobbyInputMapper::mapClick(
     }
 
     if (view.modal == LobbyModal::CreateRoom) {
+        if (contains(layout.roomNameField, point)) {
+            return {};
+        }
+        if (contains(layout.publicVisibilityButton, point)) {
+            return {LobbyActionType::SelectPublicVisibility, {}};
+        }
+        if (contains(layout.hiddenVisibilityButton, point)) {
+            return {LobbyActionType::SelectHiddenVisibility, {}};
+        }
         if (contains(layout.modalPrimaryButton, point)) {
-            return {LobbyActionType::CreatePublicRoom, {}};
+            return {LobbyActionType::SubmitCreateRoom, {}};
         }
         if (contains(layout.modalSecondaryButton, point)) {
-            return {LobbyActionType::CreateHiddenRoom, {}};
+            return {LobbyActionType::CancelModal, {}};
         }
-        return {LobbyActionType::CancelModal, {}};
+        return {};
     }
     if (view.modal == LobbyModal::JoinHiddenRoom) {
         if (contains(layout.modalPrimaryButton, point)) {

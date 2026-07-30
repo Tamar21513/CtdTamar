@@ -6,6 +6,9 @@
 #include "Lobby/LobbyInputMapper.hpp"
 #include "Lobby/LobbyLayout.hpp"
 #include "Lobby/LobbyRenderer.hpp"
+#include "Graphics/Renderer.hpp"
+#include "Graphics/AnimationLibrary.hpp"
+#include "Graphics/VisualStateMachine.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -26,6 +29,7 @@ LobbyRoom waitingRoom(
     const std::string& host = "alice") {
     LobbyRoom room;
     room.roomId = id;
+    room.name = "Room " + id;
     room.visibility = "public";
     room.status = "waiting";
     room.host = LobbyUser{"user-" + id, host};
@@ -36,6 +40,7 @@ LobbyRoom waitingRoom(
 LobbyRoom activeRoom(const std::string& id) {
     LobbyRoom room;
     room.roomId = id;
+    room.name = "Live " + id;
     room.status = "active";
     room.white = LobbyUser{"white-id", "WhitePlayer"};
     room.black = LobbyUser{"black-id", "BlackPlayer"};
@@ -61,9 +66,21 @@ public:
     int subscribeCalls = 0;
     int publicCreateCalls = 0;
     int hiddenCreateCalls = 0;
+    std::vector<std::string> createdRoomNames;
     std::vector<std::string> joinedRooms;
     std::vector<std::string> hiddenCodes;
     std::vector<std::string> watchedRooms;
+    std::vector<std::string> leftSpectatorRooms;
+    struct SentMove {
+        std::string roomId;
+        unsigned long long sequence;
+        int sourceRow;
+        int sourceCol;
+        int destinationRow;
+        int destinationCol;
+    };
+    std::vector<SentMove> sentMoves;
+    std::vector<SentMove> sentJumps;
 
     AuthResult registerUser(
         const std::string&,
@@ -91,12 +108,15 @@ public:
         return true;
     }
     bool requestLobby() override { return true; }
-    bool createPublicRoom() override {
-        ++publicCreateCalls;
-        return true;
-    }
-    bool createHiddenRoom() override {
-        ++hiddenCreateCalls;
+    bool createRoom(
+        const std::string& name,
+        bool hidden) override {
+        createdRoomNames.push_back(name);
+        if (hidden) {
+            ++hiddenCreateCalls;
+        } else {
+            ++publicCreateCalls;
+        }
         return true;
     }
     bool joinPublicRoom(const std::string& roomId) override {
@@ -109,6 +129,35 @@ public:
     }
     bool watchRoom(const std::string& roomId) override {
         watchedRooms.push_back(roomId);
+        return true;
+    }
+    bool leaveSpectator(const std::string& roomId) override {
+        leftSpectatorRooms.push_back(roomId);
+        return true;
+    }
+    bool sendMove(
+        const std::string& roomId,
+        unsigned long long sequence,
+        int sourceRow,
+        int sourceCol,
+        int destinationRow,
+        int destinationCol) override {
+        sentMoves.push_back({
+            roomId,
+            sequence,
+            sourceRow,
+            sourceCol,
+            destinationRow,
+            destinationCol});
+        return true;
+    }
+    bool sendJump(
+        const std::string& roomId,
+        unsigned long long sequence,
+        int row,
+        int col) override {
+        sentJumps.push_back({
+            roomId, sequence, row, col, row, col});
         return true;
     }
     std::optional<LobbyClientEvent> pollEvent() override {
@@ -320,11 +369,16 @@ TEST_CASE("Room commands use typed IDs and block duplicates") {
     LobbyController controller(state, transport);
     makeLobbyReady(state, transport, controller);
 
-    controller.handle({LobbyActionType::CreatePublicRoom, {}});
-    controller.handle({LobbyActionType::CreatePublicRoom, {}});
+    state.editableForInput().roomNameInput = "  Friendly Room  ";
+    controller.handle({LobbyActionType::SubmitCreateRoom, {}});
+    controller.handle({LobbyActionType::SubmitCreateRoom, {}});
     CHECK(transport.publicCreateCalls == 1);
+    CHECK(transport.createdRoomNames ==
+          std::vector<std::string>{"Friendly Room"});
     state.clearPending();
-    controller.handle({LobbyActionType::CreateHiddenRoom, {}});
+    controller.handle({
+        LobbyActionType::SelectHiddenVisibility, {}});
+    controller.handle({LobbyActionType::SubmitCreateRoom, {}});
     CHECK(transport.hiddenCreateCalls == 1);
 
     state.clearPending();
@@ -355,6 +409,87 @@ TEST_CASE("Room commands use typed IDs and block duplicates") {
     controller.handle({LobbyActionType::WatchRoom, "game-9"});
     CHECK(transport.watchedRooms ==
           std::vector<std::string>{"game-9"});
+}
+
+GameStateSnapshot matchSnapshot() {
+    GameStateSnapshot snapshot;
+    snapshot.playersReady = true;
+    snapshot.whiteUsername = "alice";
+    snapshot.blackUsername = "bob";
+    PieceSnapshot piece;
+    piece.id = 1;
+    piece.token = "wP";
+    piece.position = Position(6, 4);
+    snapshot.pieces.push_back(piece);
+    return snapshot;
+}
+
+TEST_CASE("Room name input supports typing backspace and validation") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    makeLobbyReady(state, transport, controller);
+
+    controller.handle({LobbyActionType::OpenCreateRoom, {}});
+    controller.inputCharacter('A');
+    controller.inputCharacter('B');
+    controller.backspace();
+    CHECK(state.view().roomNameInput == "A");
+
+    state.editableForInput().roomNameInput = "   ";
+    controller.handle({LobbyActionType::SubmitCreateRoom, {}});
+    CHECK(transport.createdRoomNames.empty());
+    CHECK(state.view().visibleError == "Room name is required.");
+
+    state.editableForInput().roomNameInput = std::string(41, 'x');
+    controller.handle({LobbyActionType::SubmitCreateRoom, {}});
+    CHECK(transport.createdRoomNames.empty());
+    CHECK(state.view().visibleError ==
+          "Room name must be at most 40 UTF-8 bytes.");
+}
+
+TEST_CASE("Room creation keeps errors and clears name only on success") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    makeLobbyReady(state, transport, controller);
+    auto& view = state.editableForInput();
+    view.modal = LobbyModal::CreateRoom;
+    view.roomNameInput = "My Room";
+    controller.handle({LobbyActionType::SubmitCreateRoom, {}});
+    CHECK(view.roomNameInput == "My Room");
+
+    state.applyEvent(LobbyEvent{ProtocolErrorEvent{
+        "room_name_taken",
+        "A room with this name already exists."}});
+    CHECK(view.visibleError ==
+          "A room with this name already exists.");
+    CHECK(view.roomNameInput == "My Room");
+
+    auto room = waitingRoom("created");
+    room.name = "My Room";
+    state.applyEvent(LobbyEvent{RoomCreatedEvent{room}});
+    CHECK(view.roomNameInput.empty());
+    CHECK(view.currentRoomName == "My Room");
+}
+
+TEST_CASE("Create modal maps visibility and submit controls") {
+    LobbyApplicationState state;
+    auto& view = state.editableForInput();
+    view.screen = LobbyScreen::Lobby;
+    view.modal = LobbyModal::CreateRoom;
+    LobbyLayout calculator;
+    const auto layout = calculator.calculate(1366, 768, 0, 0);
+    LobbyInputMapper mapper;
+
+    auto action = mapper.mapClick(
+        layout.hiddenVisibilityButton.tl() + cv::Point{4, 4},
+        view, layout);
+    CHECK(action.type == LobbyActionType::SelectHiddenVisibility);
+    action = mapper.mapClick(
+        layout.modalPrimaryButton.tl() + cv::Point{4, 4},
+        view, layout);
+    CHECK(action.type == LobbyActionType::SubmitCreateRoom);
 }
 
 TEST_CASE("Paging actions remain within supplied bounds") {
@@ -405,14 +540,16 @@ TEST_CASE("Structured errors disconnect and logout clear state") {
 TEST_CASE("Game and spectator events open honest placeholders") {
     LobbyApplicationState state;
     state.applyEvent(LobbyEvent{GameStartedEvent{
-        "room-1", "white", {"2", "bob"}}});
+        "room-1", "Named Match", "white", {"2", "bob"}}});
     CHECK(state.view().screen == LobbyScreen::RoomReady);
     REQUIRE(state.view().roomReady.has_value());
     CHECK(state.view().roomReady->assignedColor == "white");
+    CHECK(state.view().roomReady->roomName == "Named Match");
     CHECK(state.view().roomReady->opponentUsername == "bob");
 
     state.applyEvent(LobbyEvent{WatchingGameEvent{
         "room-1",
+        "Named Match",
         {"1", "alice"},
         {"2", "bob"},
         3}});
@@ -472,7 +609,7 @@ TEST_CASE("LobbyRenderer smoke screens do not mutate view models") {
     CHECK_FALSE(renderer.render(state.snapshot(), layout).empty());
     view.screen = LobbyScreen::SpectatorPlaceholder;
     view.spectator = SpectatorView{
-        "game", "alice", "bob", 2};
+        "game", "Named Match", "alice", "bob", 2};
     CHECK_FALSE(renderer.render(state.snapshot(), layout).empty());
 }
 
@@ -494,8 +631,9 @@ TEST_CASE("Live multi-client native lobby flow") {
     registerLive(second, userB, password);
     registerLive(spectator, userC, password);
 
+    first.state.editableForInput().roomNameInput = "Public Test Room";
     first.controller.handle({
-        LobbyActionType::CreatePublicRoom, {}});
+        LobbyActionType::SubmitCreateRoom, {}});
     REQUIRE(tickUntil(
         {&first, &second, &spectator},
         [&first, &second]() {
@@ -511,15 +649,15 @@ TEST_CASE("Live multi-client native lobby flow") {
         {&first, &second, &spectator},
         [&first, &second, &spectator]() {
             return first.state.view().screen ==
-                    LobbyScreen::RoomReady &&
+                    LobbyScreen::Game &&
                 second.state.view().screen ==
-                    LobbyScreen::RoomReady &&
+                    LobbyScreen::Game &&
                 !spectator.state.view().activeRooms.empty();
         }));
-    REQUIRE(first.state.view().roomReady.has_value());
-    REQUIRE(second.state.view().roomReady.has_value());
-    CHECK(first.state.view().roomReady->assignedColor == "white");
-    CHECK(second.state.view().roomReady->assignedColor == "black");
+    REQUIRE(first.state.view().match.has_value());
+    REQUIRE(second.state.view().match.has_value());
+    CHECK(first.state.view().match->assignedColor == "white");
+    CHECK(second.state.view().match->assignedColor == "black");
 
     spectator.controller.handle({
         LobbyActionType::WatchRoom, publicRoomId});
@@ -527,51 +665,158 @@ TEST_CASE("Live multi-client native lobby flow") {
         {&first, &second, &spectator},
         [&spectator]() {
             return spectator.state.view().screen ==
-                LobbyScreen::SpectatorPlaceholder;
+                LobbyScreen::SpectatorGame;
         }));
     REQUIRE(spectator.state.view().spectator.has_value());
     CHECK(spectator.state.view().spectator->whiteUsername == userA);
     CHECK(spectator.state.view().spectator->blackUsername == userB);
     CHECK(spectator.state.view().spectator->spectatorCount == 1);
 
+    spectator.controller.handle({
+        LobbyActionType::BackToLobby, {}});
+    REQUIRE(tickUntil(
+        {&first, &second, &spectator},
+        [&spectator]() {
+            return spectator.state.view().screen ==
+                    LobbyScreen::Lobby &&
+                !spectator.state.view().activeRooms.empty() &&
+                spectator.state.view()
+                        .activeRooms[0].spectatorCount == 0;
+        }));
+
     first.controller.handle({LobbyActionType::Logout, {}});
     second.controller.tick();
     spectator.controller.tick();
     second.controller.handle({LobbyActionType::Logout, {}});
     spectator.controller.handle({LobbyActionType::Logout, {}});
+}
 
-    loginLive(first, userA, password);
-    loginLive(second, userB, password);
-    first.controller.handle({
-        LobbyActionType::CreateHiddenRoom, {}});
-    REQUIRE(tickUntil(
-        {&first, &second},
-        [&first]() {
-            return first.state.view().screen ==
-                LobbyScreen::HiddenRoomWaiting;
-        }));
-    const auto hiddenCode = first.state.view().hiddenRoomCode;
-    REQUIRE(hiddenCode.size() == 6);
-    CHECK(second.state.view().waitingRooms.empty());
+TEST_CASE("match ready opens authoritative board and stores color") {
+    LobbyApplicationState state;
+    state.applyEvent(MatchReadyEvent{
+        "room-1", "white", "bob", 1, matchSnapshot()});
+    REQUIRE(state.view().match.has_value());
+    CHECK(state.view().screen == LobbyScreen::Game);
+    CHECK(state.view().match->assignedColor == "white");
+    CHECK(state.view().match->snapshot.pieces.size() == 1);
+}
 
-    second.controller.handle({
-        LobbyActionType::OpenJoinHidden, {}});
-    for (const char character : hiddenCode) {
-        second.controller.inputCharacter(character);
-    }
-    second.controller.handle({
-        LobbyActionType::SubmitHiddenCode, {}});
-    REQUIRE(tickUntil(
-        {&first, &second},
-        [&first, &second]() {
-            return first.state.view().screen ==
-                    LobbyScreen::RoomReady &&
-                second.state.view().screen ==
-                    LobbyScreen::RoomReady;
-        }));
-    CHECK(first.state.view().roomReady->assignedColor == "white");
-    CHECK(second.state.view().roomReady->assignedColor == "black");
+TEST_CASE("moves are sent without optimistic board mutation") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    state.applyEvent(MatchReadyEvent{
+        "room-1", "white", "bob", 1, matchSnapshot()});
+    const auto before = state.view().match->snapshot;
+    controller.gameBoardClick(6, 4);
+    controller.gameBoardClick(5, 4);
+    REQUIRE(transport.sentMoves.size() == 1);
+    CHECK(transport.sentMoves[0].roomId == "room-1");
+    CHECK(transport.sentMoves[0].sequence == 1);
+    CHECK(transport.sentMoves[0].sourceRow == 6);
+    CHECK(transport.sentMoves[0].destinationRow == 5);
+    CHECK(state.view().match->snapshot.pieces[0].position ==
+          before.pieces[0].position);
+}
 
-    first.controller.handle({LobbyActionType::Logout, {}});
-    second.controller.handle({LobbyActionType::Logout, {}});
+TEST_CASE("rejection is displayed and stale revisions are ignored") {
+    LobbyApplicationState state;
+    state.applyEvent(MatchReadyEvent{
+        "room-1", "black", "alice", 3, matchSnapshot()});
+    state.applyEvent(MoveResultEvent{
+        "room-1", 1, false, "not_your_piece"});
+    CHECK(state.view().match->moveStatus ==
+          "Move rejected: not_your_piece");
+
+    auto stale = matchSnapshot();
+    stale.pieces.clear();
+    state.applyEvent(MatchStateEvent{"room-1", 2, stale});
+    CHECK(state.view().match->snapshot.pieces.size() == 1);
+    state.applyEvent(MatchStateEvent{"room-1", 4, stale});
+    CHECK(state.view().match->snapshot.pieces.empty());
+}
+
+TEST_CASE("spectator board is read only") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    state.editableForInput().authenticatedUsername = "viewer";
+    state.applyEvent(MatchSnapshotEvent{
+        "room-1", 1, matchSnapshot()});
+    CHECK(state.view().screen == LobbyScreen::SpectatorGame);
+    REQUIRE(state.view().match.has_value());
+    CHECK(state.view().match->spectator);
+    controller.gameBoardClick(6, 4);
+    controller.gameBoardClick(5, 4);
+    CHECK(transport.sentMoves.empty());
+    CHECK(transport.sentJumps.empty());
+
+    controller.handle({LobbyActionType::BackToLobby, {}});
+    CHECK(state.view().screen == LobbyScreen::Lobby);
+    REQUIRE(transport.leftSpectatorRooms.size() == 1);
+    CHECK(transport.leftSpectatorRooms[0] == "room-1");
+    CHECK_FALSE(state.view().match.has_value());
+    CHECK(state.view().authenticatedUsername == "viewer");
+}
+
+TEST_CASE("same-cell and explicit inputs use authoritative jump") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    state.applyEvent(MatchReadyEvent{
+        "room-1", "white", "bob", 1, matchSnapshot()});
+
+    controller.gameBoardClick(6, 4);
+    controller.gameBoardClick(6, 4);
+    REQUIRE(transport.sentJumps.size() == 1);
+    CHECK(transport.sentMoves.empty());
+    CHECK(transport.sentJumps[0].sourceRow == 6);
+    CHECK(transport.sentJumps[0].sourceCol == 4);
+    CHECK(transport.sentJumps[0].destinationRow == 6);
+    CHECK(transport.sentJumps[0].destinationCol == 4);
+    CHECK(state.view().match->snapshot.pieces[0].position ==
+          Position(6, 4));
+
+    controller.gameBoardJump(6, 4);
+    CHECK(transport.sentJumps.size() == 2);
+}
+
+TEST_CASE("gameplay presentation has no captions") {
+    LobbyViewModel player;
+    player.screen = LobbyScreen::Game;
+    player.visibleError = "debug";
+    player.statusMessage = "waiting";
+    player.match = AuthoritativeMatchView{};
+    player.match->moveStatus = "Move rejected: test";
+    const auto playerPresentation = gameplayPresentation(player);
+    CHECK(playerPresentation.statusLine1.empty());
+    CHECK(playerPresentation.statusLine2.empty());
+    CHECK_FALSE(playerPresentation.showSpectatorBackButton);
+
+    player.screen = LobbyScreen::SpectatorGame;
+    const auto spectatorPresentation = gameplayPresentation(player);
+    CHECK(spectatorPresentation.statusLine1.empty());
+    CHECK(spectatorPresentation.statusLine2.empty());
+    CHECK(spectatorPresentation.showSpectatorBackButton);
+    const auto button = Renderer::spectatorBackButtonRect();
+    const cv::Rect playableBoard(
+        Renderer::SIDE_PANEL_WIDTH + 66,
+        Renderer::SCORE_PANEL_HEIGHT + 66,
+        58 * 8,
+        58 * 8);
+    CHECK((button & playableBoard).area() == 0);
+}
+
+TEST_CASE("jump animation transitions through short rest to idle") {
+    CHECK(visualStateToFolderName(VisualState::Jump) == "jump");
+    VisualStateMachine machine;
+    CHECK(machine.chooseState(
+              PieceState::Airborne, 0, 0) ==
+          VisualState::Jump);
+    CHECK(machine.chooseState(
+              PieceState::Idle, 900, 2000) ==
+          VisualState::ShortRest);
+    CHECK(machine.chooseState(
+              PieceState::Idle, 0, 2000) ==
+          VisualState::Idle);
 }

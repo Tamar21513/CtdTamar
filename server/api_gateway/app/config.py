@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     REDIS_DB: int = Field(default=0, ge=0)
 
     API_GATEWAY_PORT: int = Field(default=8000, ge=1, le=65535)
+    CTD_GAME_SERVER_HOST: str = "host.docker.internal"
+    CTD_GAME_SERVER_PORT: int = Field(
+        default=5050, ge=1, le=65535
+    )
     SESSION_COOKIE_NAME: str = "ctd_session"
     SESSION_TTL_SECONDS: int = Field(default=3600, ge=60)
     SESSION_COOKIE_SECURE: bool = False

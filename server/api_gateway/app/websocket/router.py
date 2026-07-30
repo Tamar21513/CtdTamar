@@ -3,10 +3,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.matches.manager import MatchManager, MatchOperationError
 from app.rooms.manager import RoomManager, RoomOperationError
 from app.rooms.schemas import (
     error_message as room_error_message,
-    game_started_message,
     room_created_message,
     watching_game_message,
 )
@@ -47,25 +47,13 @@ def _room_uuid(message: dict) -> UUID:
         ) from error
 
 
-async def _start_room(room) -> None:
-    if room.white is None or room.black is None:
-        return
-    await _safe_send(
-        room.white.websocket,
-        game_started_message(room, room.white),
-    )
-    await _safe_send(
-        room.black.websocket,
-        game_started_message(room, room.black),
-    )
-
-
 async def _handle_room_message(
     websocket: WebSocket,
     user,
     message: dict,
 ) -> bool:
     manager: RoomManager = websocket.app.state.room_manager
+    matches: MatchManager = websocket.app.state.match_manager
     message_type = message.get("type")
     try:
         if message_type == "create_room":
@@ -73,6 +61,7 @@ async def _handle_room_message(
                 user.id,
                 user.username,
                 websocket,
+                message.get("name"),
                 str(message.get("visibility", "")),
             )
             await websocket.send_json(room_created_message(room))
@@ -97,7 +86,11 @@ async def _handle_room_message(
                 user.username,
                 websocket,
             )
-            await _start_room(room)
+            try:
+                await matches.start_match(room)
+            except MatchOperationError:
+                await manager.rollback_join(room.room_id, user.id)
+                raise
             await _broadcast_lobby(manager)
             return True
 
@@ -114,7 +107,11 @@ async def _handle_room_message(
                 user.username,
                 websocket,
             )
-            await _start_room(room)
+            try:
+                await matches.start_match(room)
+            except MatchOperationError:
+                await manager.rollback_join(room.room_id, user.id)
+                raise
             await _broadcast_lobby(manager)
             return True
 
@@ -126,9 +123,41 @@ async def _handle_room_message(
                 websocket,
             )
             await websocket.send_json(watching_game_message(room))
+            await matches.watch_match(room.room_id, websocket)
             await _broadcast_lobby(manager)
             return True
-    except RoomOperationError as error:
+        if message_type == "leave_spectator":
+            await manager.leave_spectator(
+                websocket, _room_uuid(message)
+            )
+            await websocket.send_json(
+                {
+                    "type": "spectator_left",
+                    "room_id": str(_room_uuid(message)),
+                }
+            )
+            await _broadcast_lobby(manager)
+            return True
+        if message_type == "move_request":
+            await matches.move(
+                _room_uuid(message),
+                user.id,
+                websocket,
+                message.get("sequence"),
+                message.get("from"),
+                message.get("to"),
+            )
+            return True
+        if message_type == "jump_request":
+            await matches.jump(
+                _room_uuid(message),
+                user.id,
+                websocket,
+                message.get("sequence"),
+                message.get("cell"),
+            )
+            return True
+    except (RoomOperationError, MatchOperationError) as error:
         await websocket.send_json(
             room_error_message(error.code, error.message)
         )
@@ -197,6 +226,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             user.id,
             websocket,
         )
+        if cleanup.removed_room_id is not None:
+            matches: MatchManager = websocket.app.state.match_manager
+            await matches.cleanup_room(cleanup.removed_room_id)
         for notification in cleanup.notifications:
             await _safe_send(
                 notification.websocket,

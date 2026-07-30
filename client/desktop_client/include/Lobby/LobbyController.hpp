@@ -20,6 +20,8 @@ public:
     void handle(const LobbyAction& action);
     void inputCharacter(char value);
     void backspace();
+    void gameBoardClick(int row, int col);
+    void gameBoardJump(int row, int col);
     void tick();
     bool hasAuthenticationTask() const;
 
@@ -38,6 +40,7 @@ private:
         PendingLobbyAction pending,
         const std::string& roomId = {});
     static std::string normalizeHiddenCode(const std::string& value);
+    static std::string trimRoomName(const std::string& value);
     static std::string authErrorMessage(
         const ctd::network::AuthResult& result,
         bool registration);

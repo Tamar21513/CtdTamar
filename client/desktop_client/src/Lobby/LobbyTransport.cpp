@@ -43,12 +43,10 @@ bool LobbyTransport::requestLobby() {
     return client_.requestLobby();
 }
 
-bool LobbyTransport::createPublicRoom() {
-    return client_.createPublicRoom();
-}
-
-bool LobbyTransport::createHiddenRoom() {
-    return client_.createHiddenRoom();
+bool LobbyTransport::createRoom(
+    const std::string& name,
+    bool hidden) {
+    return client_.createRoom(name, hidden);
 }
 
 bool LobbyTransport::joinPublicRoom(const std::string& roomId) {
@@ -61,6 +59,35 @@ bool LobbyTransport::joinHiddenRoom(const std::string& roomCode) {
 
 bool LobbyTransport::watchRoom(const std::string& roomId) {
     return client_.watchRoom(roomId);
+}
+
+bool LobbyTransport::leaveSpectator(
+    const std::string& roomId) {
+    return client_.leaveSpectator(roomId);
+}
+
+bool LobbyTransport::sendMove(
+    const std::string& roomId,
+    unsigned long long sequence,
+    int sourceRow,
+    int sourceCol,
+    int destinationRow,
+    int destinationCol) {
+    return client_.sendMove(
+        roomId,
+        sequence,
+        sourceRow,
+        sourceCol,
+        destinationRow,
+        destinationCol);
+}
+
+bool LobbyTransport::sendJump(
+    const std::string& roomId,
+    unsigned long long sequence,
+    int row,
+    int col) {
+    return client_.sendJump(roomId, sequence, row, col);
 }
 
 std::optional<ctd::network::LobbyClientEvent>

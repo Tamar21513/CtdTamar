@@ -20,6 +20,36 @@ from app.rooms.schemas import (
 
 ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 ROOM_CODE_LENGTH = 6
+ROOM_NAME_MAX_BYTES = 40
+
+
+def validate_room_name(value: object) -> str:
+    if not isinstance(value, str):
+        raise RoomOperationError(
+            "invalid_room_name",
+            "Room name is required.",
+        )
+    name = value.strip()
+    if not name:
+        raise RoomOperationError(
+            "invalid_room_name",
+            "Room name is required.",
+        )
+    if len(name.encode("utf-8")) > ROOM_NAME_MAX_BYTES:
+        raise RoomOperationError(
+            "invalid_room_name",
+            "Room name must be at most 40 UTF-8 bytes.",
+        )
+    return name
+
+
+def normalize_room_name(value: str) -> str:
+    return value.translate(
+        str.maketrans(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "abcdefghijklmnopqrstuvwxyz",
+        )
+    )
 
 
 class RoomOperationError(RuntimeError):
@@ -38,6 +68,7 @@ class CleanupNotification:
 @dataclass
 class CleanupResult:
     lobby_changed: bool = False
+    removed_room_id: UUID | None = None
     notifications: list[CleanupNotification] = field(
         default_factory=list
     )
@@ -65,6 +96,7 @@ class RoomManager:
         waiting_rooms = [
             {
                 "room_id": str(room.room_id),
+                "name": room.name,
                 "host": public_user(room.host),
                 "visibility": room.visibility,
                 "status": room.status,
@@ -77,6 +109,7 @@ class RoomManager:
         active_games = [
             {
                 "room_id": str(room.room_id),
+                "name": room.name,
                 "white": public_user(room.white),
                 "black": public_user(room.black),
                 "status": room.status,
@@ -101,6 +134,7 @@ class RoomManager:
         user_id: UUID,
         username: str,
         websocket: WebSocket,
+        name: object,
         visibility: str,
     ) -> GameRoom:
         if visibility not in {"public", "hidden"}:
@@ -108,11 +142,22 @@ class RoomManager:
                 "invalid_visibility",
                 "Visibility must be public or hidden.",
             )
+        validated_name = validate_room_name(name)
+        normalized_name = normalize_room_name(validated_name)
         async with self._lock:
             if user_id in self._player_room_by_user:
                 raise RoomOperationError(
                     "already_in_room",
                     "User is already participating in a room.",
+                )
+            if any(
+                room.status != "finished"
+                and normalize_room_name(room.name) == normalized_name
+                for room in self._rooms.values()
+            ):
+                raise RoomOperationError(
+                    "room_name_taken",
+                    "A room with this name already exists.",
                 )
             room_code = (
                 self._new_room_code_locked()
@@ -121,6 +166,7 @@ class RoomManager:
             )
             room = GameRoom(
                 room_id=uuid4(),
+                name=validated_name,
                 visibility=visibility,
                 host=ConnectedUser(user_id, username, websocket),
                 room_code=room_code,
@@ -212,6 +258,28 @@ class RoomManager:
                 websocket,
             )
 
+    async def rollback_join(
+        self,
+        room_id: UUID,
+        guest_id: UUID,
+    ) -> None:
+        """Restores a waiting room when match allocation fails."""
+        async with self._lock:
+            room = self._rooms.get(room_id)
+            if (
+                room is None
+                or room.guest is None
+                or room.guest.user_id != guest_id
+            ):
+                return
+            self._player_room_by_user.pop(guest_id, None)
+            room.guest = None
+            room.white = None
+            room.black = None
+            room.status = "waiting"
+            if room.room_code:
+                self._hidden_codes[room.room_code] = room.room_id
+
     async def watch_room(
         self,
         room_id: UUID,
@@ -254,9 +322,43 @@ class RoomManager:
             self._spectator_room_by_connection[connection_id] = room_id
             return room
 
+    async def leave_spectator(
+        self,
+        websocket: WebSocket,
+        room_id: UUID,
+    ) -> None:
+        connection_id = id(websocket)
+        async with self._lock:
+            watched_room_id = (
+                self._spectator_room_by_connection.get(connection_id)
+            )
+            if watched_room_id != room_id:
+                raise RoomOperationError(
+                    "not_watching",
+                    "Connection is not watching this room.",
+                )
+            room = self._rooms.get(room_id)
+            if room is not None:
+                room.spectators.pop(connection_id, None)
+            self._spectator_room_by_connection.pop(
+                connection_id, None
+            )
+
     async def lobby_snapshot(self) -> dict[str, Any]:
         async with self._lock:
             return self._snapshot_locked()
+
+    async def finish_room(self, room_id: UUID) -> None:
+        async with self._lock:
+            room = self._rooms.get(room_id)
+            if room is None or room.status == "finished":
+                return
+            room.status = "finished"
+            self._player_room_by_user.pop(room.host.user_id, None)
+            if room.guest is not None:
+                self._player_room_by_user.pop(
+                    room.guest.user_id, None
+                )
 
     async def subscribe_lobby(
         self,
@@ -318,6 +420,7 @@ class RoomManager:
                 return result
 
             self._rooms.pop(room.room_id, None)
+            result.removed_room_id = room.room_id
             if room.room_code:
                 self._hidden_codes.pop(room.room_code, None)
             self._player_room_by_user.pop(room.host.user_id, None)

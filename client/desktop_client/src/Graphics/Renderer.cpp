@@ -53,7 +53,8 @@ void Renderer::render(
     const std::string& blackUsername,
     const std::string& statusLine1,
     const std::string& statusLine2,
-    RenderOverlayMode overlayMode
+    RenderOverlayMode overlayMode,
+    bool showSpectatorBackButton
 ) {
     const cv::Mat board = loadBoardImage();
     if (board.empty()) {
@@ -106,7 +107,27 @@ void Renderer::render(
         statusLine2,
         overlayMode
     );
+    if (showSpectatorBackButton) {
+        const cv::Rect button = spectatorBackButtonRect();
+        cv::rectangle(
+            canvas, button, cv::Scalar(45, 45, 45), cv::FILLED);
+        cv::rectangle(
+            canvas, button, cv::Scalar(215, 145, 55), 2);
+        cv::putText(
+            canvas,
+            "BACK TO LOBBY",
+            cv::Point(button.x + 18, button.y + 28),
+            cv::FONT_HERSHEY_SIMPLEX,
+            0.58,
+            cv::Scalar(255, 255, 255),
+            2,
+            cv::LINE_AA);
+    }
     cv::imshow(windowName, canvas);
+}
+
+cv::Rect Renderer::spectatorBackButtonRect() {
+    return {24, 14, 190, 42};
 }
 
 // Draws all visible pieces.

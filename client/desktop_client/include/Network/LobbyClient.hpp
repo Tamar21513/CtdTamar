@@ -40,11 +40,23 @@ public:
     bool ping();
     bool subscribeLobby();
     bool requestLobby();
-    bool createPublicRoom();
-    bool createHiddenRoom();
+    bool createRoom(const std::string& name, bool hidden);
     bool joinPublicRoom(const std::string& roomId);
     bool joinHiddenRoom(const std::string& roomCode);
     bool watchRoom(const std::string& roomId);
+    bool leaveSpectator(const std::string& roomId);
+    bool sendMove(
+        const std::string& roomId,
+        unsigned long long sequence,
+        int sourceRow,
+        int sourceCol,
+        int destinationRow,
+        int destinationCol);
+    bool sendJump(
+        const std::string& roomId,
+        unsigned long long sequence,
+        int row,
+        int col);
     std::optional<LobbyClientEvent> pollEvent();
 
 private:

@@ -265,18 +265,22 @@ void LobbyRenderer::drawRoomCard(
         frame, badge,
         {rectangle.x + 20, rectangle.y + 28},
         0.42, badgeColor, 1);
+    text(
+        frame, clipped(room.name, 28),
+        {rectangle.x + 20, rectangle.y + 54},
+        0.55, Ink, 1);
     if (active) {
         text(
             frame,
             "WHITE   " +
                 clipped(room.white ? room.white->username : "-", 18),
-            {rectangle.x + 20, rectangle.y + 57},
+            {rectangle.x + 20, rectangle.y + 82},
             0.47, Ink, 1);
         text(
             frame,
             "BLACK   " +
                 clipped(room.black ? room.black->username : "-", 18),
-            {rectangle.x + 20, rectangle.y + 82},
+            {rectangle.x + 20, rectangle.y + 107},
             0.47, Ink, 1);
         text(
             frame,
@@ -287,11 +291,11 @@ void LobbyRenderer::drawRoomCard(
         text(
             frame,
             clipped(room.host ? room.host->username : "Unknown host", 24),
-            {rectangle.x + 20, rectangle.y + 66},
-            0.62, Ink, 1);
+            {rectangle.x + 20, rectangle.y + 84},
+            0.48, Ink, 1);
         text(
             frame, "Ready for an opponent",
-            {rectangle.x + 20, rectangle.y + 91},
+            {rectangle.x + 20, rectangle.y + 109},
             0.4, Muted, 1);
     }
     const auto action = LobbyLayout::cardActionButton(rectangle);
@@ -412,12 +416,37 @@ void LobbyRenderer::drawModal(
             "Public rooms are visible. Hidden rooms use an invite code.",
             {layout.modal.x + 60, layout.modal.y + 98},
             0.42, Muted, 1);
+        text(
+            frame, "ROOM NAME",
+            {layout.roomNameField.x, layout.roomNameField.y - 10},
+            0.42, Muted, 1);
+        inputField(
+            frame, layout.roomNameField,
+            view.roomNameInput, true, "My Room");
+        text(
+            frame, "VISIBILITY",
+            {layout.publicVisibilityButton.x,
+             layout.publicVisibilityButton.y - 10},
+            0.42, Muted, 1);
         button(
-            frame, layout.modalPrimaryButton, "PUBLIC",
-            true, view.pendingAction == PendingLobbyAction::None,
+            frame, layout.publicVisibilityButton, "PUBLIC",
+            false, view.pendingAction == PendingLobbyAction::None,
+            hover(layout.publicVisibilityButton, mouse),
+            view.selectedRoomVisibility ==
+                RoomVisibilitySelection::Public);
+        button(
+            frame, layout.hiddenVisibilityButton, "HIDDEN",
+            false, view.pendingAction == PendingLobbyAction::None,
+            hover(layout.hiddenVisibilityButton, mouse),
+            view.selectedRoomVisibility ==
+                RoomVisibilitySelection::Hidden);
+        button(
+            frame, layout.modalPrimaryButton, "CREATE ROOM",
+            true, view.pendingAction == PendingLobbyAction::None &&
+                !view.roomNameInput.empty(),
             hover(layout.modalPrimaryButton, mouse));
         button(
-            frame, layout.modalSecondaryButton, "HIDDEN",
+            frame, layout.modalSecondaryButton, "CANCEL",
             false, view.pendingAction == PendingLobbyAction::None,
             hover(layout.modalSecondaryButton, mouse));
     } else {
@@ -445,7 +474,7 @@ void LobbyRenderer::drawModal(
         text(
             frame,
             clipped(view.visibleError, 64),
-            {layout.modal.x + 60, layout.modal.y + 205},
+            {layout.modal.x + 60, layout.modal.y + 306},
             0.4, Red, 1);
     }
 }
@@ -469,6 +498,10 @@ void LobbyRenderer::drawPlaceholder(
         view.spectator) {
         text(frame, "LIVE SPECTATOR", {center.x + 60, center.y + 68},
              0.9, Red, 2);
+        text(
+            frame, view.spectator->roomName,
+            {center.x + 60, center.y + 100},
+            0.55, Muted, 1);
         text(
             frame,
             "WHITE   " + view.spectator->whiteUsername,
@@ -495,6 +528,10 @@ void LobbyRenderer::drawPlaceholder(
         text(frame, "ROOM READY", {center.x + 60, center.y + 82},
              1.0, Green, 2);
         text(
+            frame, view.roomReady->roomName,
+            {center.x + 60, center.y + 112},
+            0.55, Muted, 1);
+        text(
             frame,
             "You are " + view.roomReady->assignedColor,
             {center.x + 60, center.y + 150},
@@ -517,14 +554,18 @@ void LobbyRenderer::drawPlaceholder(
             hidden ? "HIDDEN ROOM CREATED" : "WAITING FOR OPPONENT",
             {center.x + 60, center.y + 86},
             0.85, Ink, 2);
+        text(
+            frame, view.currentRoomName,
+            {center.x + 60, center.y + 120},
+            0.55, Muted, 1);
         if (hidden) {
             text(
                 frame, "INVITE CODE",
-                {center.x + 60, center.y + 145},
+                {center.x + 60, center.y + 160},
                 0.45, Muted, 1);
             text(
                 frame, view.hiddenRoomCode,
-                {center.x + 60, center.y + 210},
+                {center.x + 60, center.y + 225},
                 1.4, Primary, 3);
             text(
                 frame,

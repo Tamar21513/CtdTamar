@@ -66,14 +66,11 @@ bool LobbyClient::requestLobby() {
     return websocketClient_.sendText(LobbyProtocol::getLobby());
 }
 
-bool LobbyClient::createPublicRoom() {
+bool LobbyClient::createRoom(
+    const std::string& name,
+    bool hidden) {
     return websocketClient_.sendText(
-        LobbyProtocol::createRoom(false));
-}
-
-bool LobbyClient::createHiddenRoom() {
-    return websocketClient_.sendText(
-        LobbyProtocol::createRoom(true));
+        LobbyProtocol::createRoom(name, hidden));
 }
 
 bool LobbyClient::joinPublicRoom(const std::string& roomId) {
@@ -89,6 +86,38 @@ bool LobbyClient::joinHiddenRoom(const std::string& roomCode) {
 bool LobbyClient::watchRoom(const std::string& roomId) {
     return websocketClient_.sendText(
         LobbyProtocol::watchGame(roomId));
+}
+
+bool LobbyClient::leaveSpectator(const std::string& roomId) {
+    return websocketClient_.sendText(
+        LobbyProtocol::leaveSpectator(roomId));
+}
+
+bool LobbyClient::sendMove(
+    const std::string& roomId,
+    unsigned long long sequence,
+    int sourceRow,
+    int sourceCol,
+    int destinationRow,
+    int destinationCol) {
+    return websocketClient_.sendText(
+        LobbyProtocol::moveRequest(
+            roomId,
+            sequence,
+            sourceRow,
+            sourceCol,
+            destinationRow,
+            destinationCol));
+}
+
+bool LobbyClient::sendJump(
+    const std::string& roomId,
+    unsigned long long sequence,
+    int row,
+    int col) {
+    return websocketClient_.sendText(
+        LobbyProtocol::jumpRequest(
+            roomId, sequence, row, col));
 }
 
 std::optional<LobbyClientEvent> LobbyClient::pollEvent() {

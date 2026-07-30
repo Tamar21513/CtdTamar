@@ -17,6 +17,8 @@ enum class LobbyScreen {
     HiddenRoomWaiting,
     RoomReady,
     SpectatorPlaceholder,
+    Game,
+    SpectatorGame,
     Error
 };
 
@@ -29,6 +31,11 @@ enum class LobbyModal {
 enum class AuthenticationField {
     Username,
     Password
+};
+
+enum class RoomVisibilitySelection {
+    Public,
+    Hidden
 };
 
 enum class PendingLobbyAction {
@@ -45,6 +52,7 @@ enum class PendingLobbyAction {
 
 struct SpectatorView {
     std::string roomId;
+    std::string roomName;
     std::string whiteUsername;
     std::string blackUsername;
     int spectatorCount = 0;
@@ -52,8 +60,21 @@ struct SpectatorView {
 
 struct RoomReadyView {
     std::string roomId;
+    std::string roomName;
     std::string assignedColor;
     std::string opponentUsername;
+};
+
+struct AuthoritativeMatchView {
+    std::string roomId;
+    std::string assignedColor;
+    std::string opponentUsername;
+    unsigned long long revision = 0;
+    unsigned long long nextSequence = 1;
+    GameStateSnapshot snapshot;
+    std::optional<Position> selectedSource;
+    std::string moveStatus;
+    bool spectator = false;
 };
 
 struct LobbyViewModel {
@@ -68,6 +89,10 @@ struct LobbyViewModel {
     std::string authenticatedUsername;
     std::string visibleError;
     std::string statusMessage;
+    std::string roomNameInput;
+    std::string currentRoomName;
+    RoomVisibilitySelection selectedRoomVisibility =
+        RoomVisibilitySelection::Public;
     std::string hiddenRoomCodeInput;
     std::string hiddenRoomCode;
     std::string pendingRoomId;
@@ -75,11 +100,21 @@ struct LobbyViewModel {
     std::vector<ctd::network::LobbyRoom> activeRooms;
     std::optional<SpectatorView> spectator;
     std::optional<RoomReadyView> roomReady;
+    std::optional<AuthoritativeMatchView> match;
     int waitingPage = 0;
     int activePage = 0;
 
     bool networkActionsEnabled() const;
 };
+
+struct GameplayPresentation {
+    std::string statusLine1;
+    std::string statusLine2;
+    bool showSpectatorBackButton = false;
+};
+
+GameplayPresentation gameplayPresentation(
+    const LobbyViewModel& view);
 
 class LobbyApplicationState {
 public:
