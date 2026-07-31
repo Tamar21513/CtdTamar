@@ -136,6 +136,7 @@ class RoomManager:
         websocket: WebSocket,
         name: object,
         visibility: str,
+        rating: int = 1200,
     ) -> GameRoom:
         if visibility not in {"public", "hidden"}:
             raise RoomOperationError(
@@ -168,7 +169,9 @@ class RoomManager:
                 room_id=uuid4(),
                 name=validated_name,
                 visibility=visibility,
-                host=ConnectedUser(user_id, username, websocket),
+                host=ConnectedUser(
+                    user_id, username, websocket, rating
+                ),
                 room_code=room_code,
             )
             self._rooms[room.room_id] = room
@@ -183,6 +186,7 @@ class RoomManager:
         user_id: UUID,
         username: str,
         websocket: WebSocket,
+        rating: int = 1200,
     ) -> GameRoom:
         if room.host.user_id == user_id:
             raise RoomOperationError(
@@ -199,7 +203,7 @@ class RoomManager:
                 "room_unavailable",
                 "Room is no longer available.",
             )
-        guest = ConnectedUser(user_id, username, websocket)
+        guest = ConnectedUser(user_id, username, websocket, rating)
         room.guest = guest
         room.white = room.host
         room.black = guest
@@ -215,6 +219,7 @@ class RoomManager:
         user_id: UUID,
         username: str,
         websocket: WebSocket,
+        rating: int = 1200,
     ) -> GameRoom:
         async with self._lock:
             room = self._rooms.get(room_id)
@@ -233,6 +238,7 @@ class RoomManager:
                 user_id,
                 username,
                 websocket,
+                rating,
             )
 
     async def join_hidden_room(
@@ -241,6 +247,7 @@ class RoomManager:
         user_id: UUID,
         username: str,
         websocket: WebSocket,
+        rating: int = 1200,
     ) -> GameRoom:
         normalized_code = room_code.strip().upper()
         async with self._lock:
@@ -256,7 +263,63 @@ class RoomManager:
                 user_id,
                 username,
                 websocket,
+                rating,
             )
+
+    async def is_in_room(self, user_id: UUID) -> bool:
+        async with self._lock:
+            return user_id in self._player_room_by_user
+
+    async def match_players(
+        self,
+        first: ConnectedUser,
+        second: ConnectedUser,
+    ) -> GameRoom:
+        """Creates an already-active room for two players paired by
+        the play queue, skipping the room-name step used by
+        create_room/join_public_room. `first` is white (the player
+        who had been waiting longest), `second` is black."""
+        async with self._lock:
+            if (
+                first.user_id in self._player_room_by_user
+                or second.user_id in self._player_room_by_user
+            ):
+                raise RoomOperationError(
+                    "already_in_room",
+                    "A matched player is already participating "
+                    "in a room.",
+                )
+            room = GameRoom(
+                room_id=uuid4(),
+                name=f"Quick Match {secrets.token_hex(3)}",
+                visibility="public",
+                host=first,
+                guest=second,
+                white=first,
+                black=second,
+                status="active",
+            )
+            self._rooms[room.room_id] = room
+            self._player_room_by_user[first.user_id] = room.room_id
+            self._player_room_by_user[second.user_id] = room.room_id
+            return room
+
+    async def discard_room(self, room_id: UUID) -> None:
+        """Removes a room outright (both players freed), used when
+        match allocation fails immediately after a matched room is
+        created - unlike rollback_join, there is no prior "waiting"
+        state to roll back to for a matched room."""
+        async with self._lock:
+            room = self._rooms.pop(room_id, None)
+            if room is None:
+                return
+            self._player_room_by_user.pop(room.host.user_id, None)
+            if room.guest is not None:
+                self._player_room_by_user.pop(
+                    room.guest.user_id, None
+                )
+            if room.room_code:
+                self._hidden_codes.pop(room.room_code, None)
 
     async def rollback_join(
         self,
@@ -286,6 +349,7 @@ class RoomManager:
         user_id: UUID,
         username: str,
         websocket: WebSocket,
+        rating: int = 1200,
     ) -> GameRoom:
         connection_id = id(websocket)
         async with self._lock:
@@ -318,6 +382,7 @@ class RoomManager:
                 user_id,
                 username,
                 websocket,
+                rating,
             )
             self._spectator_room_by_connection[connection_id] = room_id
             return room

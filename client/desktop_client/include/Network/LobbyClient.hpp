@@ -45,6 +45,8 @@ public:
     bool joinHiddenRoom(const std::string& roomCode);
     bool watchRoom(const std::string& roomId);
     bool leaveSpectator(const std::string& roomId);
+    bool findMatch();
+    bool cancelFindMatch();
     bool sendMove(
         const std::string& roomId,
         unsigned long long sequence,

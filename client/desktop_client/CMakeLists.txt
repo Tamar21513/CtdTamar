@@ -27,6 +27,7 @@ add_library(ctd_client_core STATIC
     src/Lobby/LobbyLayout.cpp
     src/Lobby/LobbyRenderer.cpp
     src/Lobby/LobbyTransport.cpp
+    src/Logging/FileLogger.cpp
     src/Network/ApiClient.cpp
     src/Network/LobbyClient.cpp
     src/Network/LobbyProtocol.cpp
@@ -71,11 +72,12 @@ add_executable(ctd_client main.cpp)
 target_link_libraries(ctd_client PRIVATE ctd_client_core)
 ctd_copy_runtime_dependencies(ctd_client)
 
-add_custom_command(TARGET ctd_client POST_BUILD
+add_custom_target(ctd_client_assets
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/assets
         $<TARGET_FILE_DIR:ctd_client>/assets
 )
+add_dependencies(ctd_client ctd_client_assets)
 
 add_executable(
     ctd_client_asset_smoke
@@ -86,12 +88,7 @@ target_link_libraries(
     PRIVATE ctd_client_core
 )
 ctd_copy_runtime_dependencies(ctd_client_asset_smoke)
-add_custom_command(
-    TARGET ctd_client_asset_smoke POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/assets
-        $<TARGET_FILE_DIR:ctd_client_asset_smoke>/assets
-)
+add_dependencies(ctd_client_asset_smoke ctd_client_assets)
 
 add_executable(
     ctd_client_transport_tests

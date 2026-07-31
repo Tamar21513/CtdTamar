@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     SESSION_COOKIE_SECURE: bool = False
     SESSION_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
 
+    LOG_DIR: str = "/app/logs"
+
     @property
     def database_url(self) -> str:
         from urllib.parse import quote_plus

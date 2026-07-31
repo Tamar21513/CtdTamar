@@ -22,11 +22,22 @@ LobbyAction LobbyInputMapper::mapClick(
         if (contains(layout.passwordField, point)) {
             return {LobbyActionType::FocusPassword, {}};
         }
+        if (view.authMode == AuthenticationMode::Register &&
+            contains(layout.confirmPasswordField, point)) {
+            return {LobbyActionType::FocusConfirmPassword, {}};
+        }
         if (contains(layout.loginButton, point)) {
             return {LobbyActionType::Login, {}};
         }
         if (contains(layout.registerButton, point)) {
-            return {LobbyActionType::Register, {}};
+            return {
+                view.authMode == AuthenticationMode::Login
+                    ? LobbyActionType::ToggleAuthMode
+                    : LobbyActionType::Register,
+                {}};
+        }
+        if (contains(layout.authModeToggle, point)) {
+            return {LobbyActionType::ToggleAuthMode, {}};
         }
         return {};
     }
@@ -60,8 +71,15 @@ LobbyAction LobbyInputMapper::mapClick(
     }
 
     if (view.screen == LobbyScreen::Lobby) {
+        if (contains(layout.playButton, point)) {
+            return {LobbyActionType::FindMatch, {}};
+        }
         if (contains(layout.createRoomButton, point)) {
-            return {LobbyActionType::OpenCreateRoom, {}};
+            return {
+                view.pendingAction == PendingLobbyAction::FindMatch
+                    ? LobbyActionType::CancelFindMatch
+                    : LobbyActionType::OpenCreateRoom,
+                {}};
         }
         if (contains(layout.joinHiddenButton, point)) {
             return {LobbyActionType::OpenJoinHidden, {}};

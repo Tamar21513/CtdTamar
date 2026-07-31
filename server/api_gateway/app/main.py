@@ -1,18 +1,25 @@
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 import psycopg
 import redis
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.auth.router import router as auth_router
 from app.config import Settings, get_settings
 from app.db.session import create_database_engine, create_session_factory
 from app.health import build_health_response
+from app.logging_config import configure_logging
 from app.matches.manager import MatchManager
+from app.matches.play_queue import PlayQueue
 from app.rooms.manager import RoomManager
 from app.websocket.router import router as websocket_router
+
+
+configure_logging(get_settings())
+logger = logging.getLogger(__name__)
 
 
 def check_postgres(settings: Settings | None = None) -> bool:
@@ -59,6 +66,11 @@ def check_redis(settings: Settings | None = None) -> bool:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    # Re-asserted here (not just at module import) because Alembic's
+    # `command.upgrade` calls `logging.config.fileConfig`, which
+    # detaches every root logger handler, including ours; this
+    # re-attaches them whenever the app starts up.
+    configure_logging(settings)
     engine = create_database_engine(settings)
     redis_client = create_redis_client(settings)
     app.state.settings = settings
@@ -66,6 +78,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db_session_factory = create_session_factory(engine)
     app.state.redis_client = redis_client
     app.state.room_manager = RoomManager()
+    app.state.play_queue = PlayQueue()
 
     async def match_ended(room_id) -> None:
         await app.state.room_manager.finish_room(room_id)
@@ -82,6 +95,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.CTD_GAME_SERVER_HOST,
         settings.CTD_GAME_SERVER_PORT,
         match_ended_handler=match_ended,
+        session_factory=app.state.db_session_factory,
     )
     try:
         yield
@@ -99,6 +113,23 @@ app = FastAPI(
 )
 app.include_router(auth_router)
 app.include_router(websocket_router)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    # Deliberately logs only method + path, never the request body -
+    # the auth endpoints carry a password field in their body.
+    logger.exception(
+        "unhandled_exception method=%s path=%s",
+        request.method,
+        request.url.path,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
 
 
 @app.get("/health")

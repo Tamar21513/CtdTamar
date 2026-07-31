@@ -4,10 +4,11 @@ from uuid import UUID
 from app.rooms.models import ConnectedUser, GameRoom
 
 
-def public_user(user: ConnectedUser) -> dict[str, str]:
+def public_user(user: ConnectedUser) -> dict[str, Any]:
     return {
         "id": str(user.user_id),
         "username": user.username,
+        "rating": user.rating,
     }
 
 

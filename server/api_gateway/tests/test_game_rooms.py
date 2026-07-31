@@ -1,6 +1,9 @@
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.auth.sessions import SESSION_PREFIX
+from app.db.models import User
+from app.matches.play_queue import PlayQueue
 
 
 PASSWORD = "StrongPassword123!"
@@ -11,6 +14,15 @@ def register(client: TestClient, username: str) -> dict[str, str]:
     response = client.post("/auth/register", json=credentials)
     assert response.status_code == 201
     return credentials
+
+
+def set_rating(client: TestClient, username: str, rating: int) -> None:
+    with client.app.state.db_session_factory() as session:
+        user = session.scalar(
+            select(User).where(User.username == username)
+        )
+        user.rating = rating
+        session.commit()
 
 
 def login(
@@ -64,6 +76,10 @@ def start_public_game(
     )
     host_started = host_socket.receive_json()
     guest_started = guest_socket.receive_json()
+    while host_socket.receive_json()["type"] != "match_started":
+        pass
+    while guest_socket.receive_json()["type"] != "match_started":
+        pass
     return (
         host_context,
         host_socket,
@@ -500,9 +516,10 @@ def test_waiting_room_cannot_be_watched_and_player_cannot_spectate(
             guest.send_json(
                 {"type": "watch_game", "room_id": room["room_id"]}
             )
-            assert guest.receive_json()["code"] == (
-                "player_cannot_spectate"
-            )
+            response = guest.receive_json()
+            while response.get("type") == "match_countdown":
+                response = guest.receive_json()
+            assert response["code"] == "player_cannot_spectate"
 
 
 def test_waiting_disconnect_removes_room_and_hidden_code(
@@ -587,3 +604,240 @@ def test_matchmaking_cleanup_keeps_login_session(
     assert client.app.state.redis_client.exists(
         f"{SESSION_PREFIX}{token}"
     ) == 1
+
+
+def test_connected_and_room_payloads_include_rating(
+    client: TestClient,
+) -> None:
+    credentials = register(client, "rating_display_user")
+    login(client, credentials)
+    with connect(client) as socket:
+        connected = socket.receive_json()
+        assert connected["type"] == "connected"
+        assert connected["user"]["rating"] == 1200
+        room = create_room(socket, "public", "Rating Room")
+        assert room["host"]["rating"] == 1200
+
+
+def test_find_match_pairs_two_waiting_players(
+    client: TestClient,
+) -> None:
+    first_credentials = register(client, "queue_first")
+    second_credentials = register(client, "queue_second")
+
+    login(client, first_credentials)
+    with connect(client) as first_socket:
+        first_socket.receive_json()
+        first_socket.send_json({"type": "find_match"})
+        assert first_socket.receive_json() == {"type": "searching"}
+
+        login(client, second_credentials)
+        with connect(client) as second_socket:
+            second_socket.receive_json()
+            second_socket.send_json({"type": "find_match"})
+
+            first_ready = first_socket.receive_json()
+            second_ready = second_socket.receive_json()
+            assert first_ready["type"] == "match_ready"
+            assert second_ready["type"] == "match_ready"
+            assert first_ready["color"] == "white"
+            assert second_ready["color"] == "black"
+            assert (
+                first_ready["room_id"] == second_ready["room_id"]
+            )
+
+
+def test_find_match_alone_receives_searching_ack(
+    client: TestClient,
+) -> None:
+    credentials = register(client, "lone_seeker")
+    login(client, credentials)
+    with connect(client) as socket:
+        socket.receive_json()
+        socket.send_json({"type": "find_match"})
+        assert socket.receive_json() == {"type": "searching"}
+
+
+def test_find_match_timeout_sends_match_not_found(
+    client: TestClient,
+) -> None:
+    client.app.state.play_queue = PlayQueue(timeout_seconds=0.05)
+    credentials = register(client, "timeout_seeker")
+    login(client, credentials)
+    with connect(client) as socket:
+        socket.receive_json()
+        socket.send_json({"type": "find_match"})
+        assert socket.receive_json() == {"type": "searching"}
+        assert socket.receive_json() == {"type": "match_not_found"}
+
+
+def test_disconnected_queued_player_is_not_later_paired(
+    client: TestClient,
+) -> None:
+    first_credentials = register(client, "vanish_first")
+    second_credentials = register(client, "vanish_second")
+
+    login(client, first_credentials)
+    with connect(client) as first_socket:
+        first_socket.receive_json()
+        first_socket.send_json({"type": "find_match"})
+        assert first_socket.receive_json() == {"type": "searching"}
+    # first_socket is disconnected here (context exited), which
+    # must remove it from the queue.
+
+    login(client, second_credentials)
+    with connect(client) as second_socket:
+        second_socket.receive_json()
+        second_socket.send_json({"type": "find_match"})
+        assert second_socket.receive_json() == {"type": "searching"}
+
+
+def test_cancel_find_match_removes_waiting_player(
+    client: TestClient,
+) -> None:
+    first_credentials = register(client, "cancel_first")
+    second_credentials = register(client, "cancel_second")
+
+    login(client, first_credentials)
+    with connect(client) as first_socket:
+        first_socket.receive_json()
+        first_socket.send_json({"type": "find_match"})
+        assert first_socket.receive_json() == {"type": "searching"}
+        first_socket.send_json({"type": "cancel_find_match"})
+        assert first_socket.receive_json() == {
+            "type": "find_match_cancelled"
+        }
+
+        login(client, second_credentials)
+        with connect(client) as second_socket:
+            second_socket.receive_json()
+            second_socket.send_json({"type": "find_match"})
+            assert second_socket.receive_json() == {
+                "type": "searching"
+            }
+
+
+def test_find_match_pairs_within_rating_range_inclusive(
+    client: TestClient,
+) -> None:
+    first_credentials = register(client, "range_first")
+    second_credentials = register(client, "range_second")
+    # first stays at the default 1200; difference is exactly 100,
+    # the inclusive boundary.
+    set_rating(client, "range_second", 1300)
+
+    login(client, first_credentials)
+    with connect(client) as first_socket:
+        first_socket.receive_json()
+        first_socket.send_json({"type": "find_match"})
+        assert first_socket.receive_json() == {"type": "searching"}
+
+        login(client, second_credentials)
+        with connect(client) as second_socket:
+            second_socket.receive_json()
+            second_socket.send_json({"type": "find_match"})
+
+            first_ready = first_socket.receive_json()
+            second_ready = second_socket.receive_json()
+            assert first_ready["type"] == "match_ready"
+            assert second_ready["type"] == "match_ready"
+            assert (
+                first_ready["room_id"] == second_ready["room_id"]
+            )
+
+
+def test_find_match_does_not_pair_outside_rating_range(
+    client: TestClient,
+) -> None:
+    first_credentials = register(client, "outrange_first")
+    second_credentials = register(client, "outrange_second")
+    # Difference is 101 - just outside the inclusive +/-100 range.
+    set_rating(client, "outrange_second", 1301)
+
+    login(client, first_credentials)
+    with connect(client) as first_socket:
+        first_socket.receive_json()
+        first_socket.send_json({"type": "find_match"})
+        assert first_socket.receive_json() == {"type": "searching"}
+
+        login(client, second_credentials)
+        with connect(client) as second_socket:
+            second_socket.receive_json()
+            second_socket.send_json({"type": "find_match"})
+            assert second_socket.receive_json() == {
+                "type": "searching"
+            }
+
+
+def test_find_match_prefers_in_range_waiter_over_older_out_of_range(
+    client: TestClient,
+) -> None:
+    # A (1200) waits first. B (1450) arrives next but is out of
+    # range of A. C (1250) arrives last and is in range of A (and
+    # closer to A than B is) - C must pair with A, not with B, even
+    # though B has been waiting longer than C.
+    a_credentials = register(client, "abc_a")
+    b_credentials = register(client, "abc_b")
+    c_credentials = register(client, "abc_c")
+    set_rating(client, "abc_b", 1450)
+    set_rating(client, "abc_c", 1250)
+
+    login(client, a_credentials)
+    with connect(client) as a_socket:
+        a_socket.receive_json()
+        a_socket.send_json({"type": "find_match"})
+        assert a_socket.receive_json() == {"type": "searching"}
+
+        login(client, b_credentials)
+        with connect(client) as b_socket:
+            b_socket.receive_json()
+            b_socket.send_json({"type": "find_match"})
+            assert b_socket.receive_json() == {"type": "searching"}
+
+            login(client, c_credentials)
+            with connect(client) as c_socket:
+                c_socket.receive_json()
+                c_socket.send_json({"type": "find_match"})
+
+                a_ready = a_socket.receive_json()
+                c_ready = c_socket.receive_json()
+                assert a_ready["type"] == "match_ready"
+                assert c_ready["type"] == "match_ready"
+                assert a_ready["room_id"] == c_ready["room_id"]
+
+
+def test_find_match_tie_break_prefers_longest_waiting(
+    client: TestClient,
+) -> None:
+    # A (1100) and B (1300) are 200 apart - out of range of each
+    # other, so B queues rather than pairing with A. C (1200) is
+    # then exactly 100 from both A and B: an equal-distance tie.
+    # The tie must go to A, who has been waiting longer than B.
+    a_credentials = register(client, "tie_a")
+    b_credentials = register(client, "tie_b")
+    c_credentials = register(client, "tie_c")
+    set_rating(client, "tie_a", 1100)
+    set_rating(client, "tie_b", 1300)
+
+    login(client, a_credentials)
+    with connect(client) as a_socket:
+        a_socket.receive_json()
+        a_socket.send_json({"type": "find_match"})
+        assert a_socket.receive_json() == {"type": "searching"}
+
+        login(client, b_credentials)
+        with connect(client) as b_socket:
+            b_socket.receive_json()
+            b_socket.send_json({"type": "find_match"})
+            assert b_socket.receive_json() == {"type": "searching"}
+
+            login(client, c_credentials)
+            with connect(client) as c_socket:
+                c_socket.receive_json()
+                c_socket.send_json({"type": "find_match"})
+
+                a_ready = a_socket.receive_json()
+                c_ready = c_socket.receive_json()
+                assert a_ready["type"] == "match_ready"
+                assert c_ready["type"] == "match_ready"
+                assert a_ready["room_id"] == c_ready["room_id"]

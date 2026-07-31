@@ -16,6 +16,7 @@ class ConnectedUser:
     user_id: UUID
     username: str
     websocket: WebSocket
+    rating: int = 1200
 
 
 @dataclass

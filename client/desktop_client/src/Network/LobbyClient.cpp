@@ -93,6 +93,15 @@ bool LobbyClient::leaveSpectator(const std::string& roomId) {
         LobbyProtocol::leaveSpectator(roomId));
 }
 
+bool LobbyClient::findMatch() {
+    return websocketClient_.sendText(LobbyProtocol::findMatch());
+}
+
+bool LobbyClient::cancelFindMatch() {
+    return websocketClient_.sendText(
+        LobbyProtocol::cancelFindMatch());
+}
+
 bool LobbyClient::sendMove(
     const std::string& roomId,
     unsigned long long sequence,

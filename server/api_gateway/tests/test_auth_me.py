@@ -24,7 +24,9 @@ def test_valid_session_returns_safe_user(
     _login(client, registered_user)
     response = client.get("/auth/me")
     assert response.status_code == 200
-    assert set(response.json()) == {"id", "username", "created_at"}
+    body = response.json()
+    assert body["rating"] == 1200
+    assert set(body) == {"id", "username", "rating", "created_at"}
 
 
 def test_missing_empty_and_invalid_sessions_return_401(

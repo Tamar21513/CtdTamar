@@ -66,6 +66,14 @@ bool LobbyTransport::leaveSpectator(
     return client_.leaveSpectator(roomId);
 }
 
+bool LobbyTransport::findMatch() {
+    return client_.findMatch();
+}
+
+bool LobbyTransport::cancelFindMatch() {
+    return client_.cancelFindMatch();
+}
+
 bool LobbyTransport::sendMove(
     const std::string& roomId,
     unsigned long long sequence,

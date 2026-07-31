@@ -91,6 +91,13 @@ The session token exists only in an HttpOnly cookie. Redis stores a small JSON
 record under `ctd:session:<token>` with an atomic TTL. Tokens are generated
 cryptographically and are never returned in JSON or logged.
 
+Each register/login/logout request is logged (console and the rotating file
+at `LOG_DIR`, default `/app/logs/api_gateway.log`) with only the username and
+outcome, e.g. `auth_login username=player_one outcome=success` or
+`outcome=invalid_credentials`. The password, `confirm_password`, the Argon2id
+hash, and the session token/cookie value are never written to this log or
+any other.
+
 Login returns the same `401 Invalid username or password` response for an
 unknown username, wrong password, or malformed stored hash. `/auth/me` returns
 `401 Not authenticated` for all invalid or expired sessions. Logout is

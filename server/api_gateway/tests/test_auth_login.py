@@ -13,7 +13,9 @@ def test_login_creates_secure_ttl_session(
 ) -> None:
     response = client.post("/auth/login", json=registered_user)
     assert response.status_code == 200
-    assert set(response.json()) == {"id", "username", "created_at"}
+    body = response.json()
+    assert body["rating"] == 1200
+    assert set(body) == {"id", "username", "rating", "created_at"}
 
     cookie = response.headers["set-cookie"].lower()
     assert "ctd_session=" in cookie

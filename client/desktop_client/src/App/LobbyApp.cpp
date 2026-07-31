@@ -9,6 +9,7 @@
 #include "Graphics/AnimationLibrary.hpp"
 #include "Graphics/Renderer.hpp"
 #include "Graphics/VisualSnapshotBuilder.hpp"
+#include "Logging/FileLogger.hpp"
 
 #include <opencv2/highgui.hpp>
 
@@ -66,23 +67,11 @@ void handleKey(
     }
     if (key == 9 &&
         view.screen == LobbyScreen::Authentication) {
-        controller.handle({
-            view.focusedField == AuthenticationField::Username
-                ? LobbyActionType::FocusPassword
-                : LobbyActionType::FocusUsername,
-            {}});
+        controller.handleTab();
         return;
     }
     if (key == 13) {
-        if (view.modal == LobbyModal::CreateRoom) {
-            controller.handle({
-                LobbyActionType::SubmitCreateRoom, {}});
-        } else if (view.modal == LobbyModal::JoinHiddenRoom) {
-            controller.handle({
-                LobbyActionType::SubmitHiddenCode, {}});
-        } else if (view.screen == LobbyScreen::Authentication) {
-            controller.handle({LobbyActionType::Login, {}});
-        }
+        controller.handleEnter();
         return;
     }
     if (key >= 32 && key <= 126) {
@@ -117,8 +106,11 @@ std::vector<MoveHistoryEntry> convertHistory(
 }  // namespace
 
 void LobbyApp::run() {
+    auto& logger = ctd::logging::defaultLogger();
+    logger.info("LobbyApp starting");
     cv::namedWindow(WindowName, cv::WINDOW_NORMAL);
     cv::resizeWindow(WindowName, 1366, 768);
+    logger.info("Window created");
 
     PointerState pointer;
     cv::setMouseCallback(WindowName, mouseCallback, &pointer);
@@ -151,6 +143,7 @@ void LobbyApp::run() {
     auto previousFrame = std::chrono::steady_clock::now();
     LobbyScreen previousScreen = state.view().screen;
 
+    logger.info("Entering main loop");
     bool running = true;
     while (running) {
         controller.tick();
@@ -178,7 +171,8 @@ void LobbyApp::run() {
             static_cast<int>(view.waitingRooms.size()),
             static_cast<int>(view.activeRooms.size()),
             view.waitingPage,
-            view.activePage);
+            view.activePage,
+            view.authMode == AuthenticationMode::Register);
 
         while (!pointer.events.empty()) {
             const auto event = pointer.events.front();
@@ -274,7 +268,9 @@ void LobbyApp::run() {
                 presentation.statusLine1,
                 presentation.statusLine2,
                 RenderOverlayMode::None,
-                presentation.showSpectatorBackButton);
+                presentation.showSpectatorBackButton,
+                match.phase == MatchPhase::Countdown
+                    ? match.countdownValue : "");
         } else {
             previousFrame = std::chrono::steady_clock::now();
             const auto frame = renderer.render(
@@ -302,7 +298,15 @@ void LobbyApp::run() {
         }
     }
     transport.disconnectRealtime();
-    cv::destroyWindow(WindowName);
+    logger.info("Destroying window");
+    try {
+        if (cv::getWindowProperty(
+                WindowName,
+                cv::WND_PROP_VISIBLE) >= 0) {
+            cv::destroyWindow(WindowName);
+        }
+    } catch (...) {
+    }
 }
 
 }  // namespace ctd::lobby

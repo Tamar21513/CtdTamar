@@ -26,6 +26,7 @@ def test_authenticated_connection_and_ping(
             "user": {
                 "id": expected_user["id"],
                 "username": expected_user["username"],
+                "rating": expected_user["rating"],
             },
         }
         websocket.send_json({"type": "ping"})

@@ -30,7 +30,13 @@ enum class LobbyModal {
 
 enum class AuthenticationField {
     Username,
-    Password
+    Password,
+    ConfirmPassword
+};
+
+enum class AuthenticationMode {
+    Login,
+    Register
 };
 
 enum class RoomVisibilitySelection {
@@ -47,6 +53,7 @@ enum class PendingLobbyAction {
     JoinPublicRoom,
     JoinHiddenRoom,
     WatchRoom,
+    FindMatch,
     Logout
 };
 
@@ -64,6 +71,12 @@ struct RoomReadyView {
     std::string assignedColor;
     std::string opponentUsername;
 };
+enum class MatchPhase {
+    Loading,
+    Countdown,
+    Playing,
+    Finished
+};
 
 struct AuthoritativeMatchView {
     std::string roomId;
@@ -75,18 +88,24 @@ struct AuthoritativeMatchView {
     std::optional<Position> selectedSource;
     std::string moveStatus;
     bool spectator = false;
+    MatchPhase phase = MatchPhase::Loading;
+    std::string gameStartsAt;
+    std::string countdownValue;
 };
 
 struct LobbyViewModel {
     LobbyScreen screen = LobbyScreen::Authentication;
     LobbyModal modal = LobbyModal::None;
     AuthenticationField focusedField = AuthenticationField::Username;
+    AuthenticationMode authMode = AuthenticationMode::Login;
     PendingLobbyAction pendingAction = PendingLobbyAction::None;
     ctd::network::WebSocketConnectionState connectionState =
         ctd::network::WebSocketConnectionState::Disconnected;
     std::string usernameInput;
     std::size_t passwordLength = 0;
+    std::size_t confirmPasswordLength = 0;
     std::string authenticatedUsername;
+    int authenticatedUserRating = 1200;
     std::string visibleError;
     std::string statusMessage;
     std::string roomNameInput;

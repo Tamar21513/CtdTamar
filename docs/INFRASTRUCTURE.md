@@ -65,7 +65,18 @@ deletes persistent PostgreSQL and Redis volumes.
 
 ## Logs and shutdown
 
+The API Gateway logs to both stdout (captured by Docker) and a rotating file
+inside the container at `LOG_DIR` (default `/app/logs/api_gateway.log`, 5 MB
+per file, 3 backups kept). The `api_gateway_logs` named volume mounts that
+directory so file logs survive `docker compose restart`.
+
 ```powershell
 docker compose logs --follow api-gateway
+docker compose exec api-gateway tail -f /app/logs/api_gateway.log
 docker compose down
 ```
+
+Log lines cover request-lifecycle events (auth register/login/logout
+outcomes, room create/join/watch/close, match allocate/start/finish/cancel)
+and unhandled exceptions. Passwords, `confirm_password`, password hashes,
+session tokens, and cookies are never written to either log destination.

@@ -63,7 +63,8 @@ LobbyLayoutResult LobbyLayout::calculate(
     int waitingCardCount,
     int activeCardCount,
     int waitingPage,
-    int activePage) const {
+    int activePage,
+    bool registrationMode) const {
     width = std::max(width, MinimumWidth);
     height = std::max(height, MinimumHeight);
     constexpr int margin = 36;
@@ -104,12 +105,13 @@ LobbyLayoutResult LobbyLayout::calculate(
         activePage,
         result.cardsPerPage);
 
+    result.playButton = {width - 670, 25, 110, 44};
     result.createRoomButton = {width - 548, 25, 150, 44};
     result.joinHiddenButton = {width - 386, 25, 176, 44};
     result.logoutButton = {width - 196, 25, 124, 44};
 
     const int panelWidth = 520;
-    const int panelHeight = 440;
+    const int panelHeight = registrationMode ? 520 : 440;
     result.authenticationPanel = {
         (width - panelWidth) / 2,
         (height - panelHeight) / 2,
@@ -125,16 +127,31 @@ LobbyLayoutResult LobbyLayout::calculate(
         result.authenticationPanel.y + 216,
         panelWidth - 100,
         54};
+    result.confirmPasswordField = registrationMode
+        ? cv::Rect{
+            result.authenticationPanel.x + 50,
+            result.authenticationPanel.y + 302,
+            panelWidth - 100,
+            54}
+        : cv::Rect{};
+    const int buttonY = registrationMode
+        ? result.authenticationPanel.y + 390
+        : result.authenticationPanel.y + 304;
     result.loginButton = {
         result.authenticationPanel.x + 50,
-        result.authenticationPanel.y + 304,
+        buttonY,
         196,
         52};
     result.registerButton = {
         result.authenticationPanel.x + 274,
-        result.authenticationPanel.y + 304,
+        buttonY,
         196,
         52};
+    result.authModeToggle = {
+        result.authenticationPanel.x + 50,
+        result.authenticationPanel.y + panelHeight - 74,
+        panelWidth - 100,
+        28};
 
     result.modal = {
         (width - 560) / 2,

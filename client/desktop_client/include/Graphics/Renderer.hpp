@@ -50,7 +50,8 @@ public:
         const std::string& statusLine2 = "",
         RenderOverlayMode overlayMode =
             RenderOverlayMode::Status,
-        bool showSpectatorBackButton = false
+        bool showSpectatorBackButton = false,
+        const std::string& countdownValue = ""
     );
 
     cv::Mat cropTransparentMargins(const cv::Mat& sprite) const;
@@ -83,6 +84,8 @@ private:
         const std::string& statusLine2,
         RenderOverlayMode overlayMode
     );
+    void drawCountdown(
+        cv::Mat& canvas, const std::string& value) const;
     void drawMoveHistory(cv::Mat& canvas, const std::vector<MoveHistoryEntry>& moves,
         const std::string& title, int x, int y, int width, int height);
     std::string formatTime(long long timeMs) const;

@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -22,6 +23,8 @@ from app.config import Settings, get_settings
 from app.db.models import User
 from app.db.session import get_db_session
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -65,17 +68,30 @@ def register(
     session: Annotated[Session, Depends(get_db_session)],
 ) -> User:
     try:
-        return register_user(session, credentials)
+        user = register_user(session, credentials)
     except DuplicateUsernameError as error:
+        logger.warning(
+            "auth_register username=%s outcome=already_registered",
+            credentials.username,
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Username is already registered",
         ) from error
     except AuthenticationInfrastructureError as error:
+        logger.error(
+            "auth_register username=%s outcome=infrastructure_error",
+            credentials.username,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication service unavailable",
         ) from error
+    logger.info(
+        "auth_register username=%s outcome=success",
+        user.username,
+    )
+    return user
 
 
 @router.post("/login", response_model=UserResponse)
@@ -94,6 +110,10 @@ def login(
             settings.SESSION_TTL_SECONDS,
         )
     except AuthenticationFailed as error:
+        logger.warning(
+            "auth_login username=%s outcome=invalid_credentials",
+            credentials.username,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
@@ -102,10 +122,18 @@ def login(
         AuthenticationInfrastructureError,
         SessionStoreUnavailable,
     ) as error:
+        logger.error(
+            "auth_login username=%s outcome=service_unavailable",
+            credentials.username,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication service unavailable",
         ) from error
+    logger.info(
+        "auth_login username=%s outcome=success",
+        user.username,
+    )
     _set_session_cookie(response, token, settings)
     return user
 
@@ -129,4 +157,7 @@ def logout(
         delete_session(redis_client, token)
     except SessionStoreUnavailable:
         pass
+    # No username is logged here: logout is resolved from the opaque
+    # session token only, and the token itself must never be logged.
+    logger.info("auth_logout outcome=success")
     _clear_session_cookie(response, settings)

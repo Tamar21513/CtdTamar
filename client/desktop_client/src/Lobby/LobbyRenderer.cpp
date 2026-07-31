@@ -91,6 +91,12 @@ std::string clipped(
         : value.substr(0, maximum - 3) + "...";
 }
 
+// Consistent "username (rating)" display used everywhere a lobby
+// screen shows a player's identity.
+std::string withRating(const std::string& username, int rating) {
+    return username + " (" + std::to_string(rating) + ")";
+}
+
 bool hover(const cv::Rect& rectangle, const cv::Point& mouse) {
     return mouse.x >= 0 && rectangle.contains(mouse);
 }
@@ -177,6 +183,20 @@ void LobbyRenderer::drawAuthentication(
         std::string(view.passwordLength, '*'),
         view.focusedField == AuthenticationField::Password,
         "at least 10 characters");
+    if (view.authMode == AuthenticationMode::Register) {
+        text(
+            frame, "CONFIRM PASSWORD",
+            {layout.confirmPasswordField.x,
+             layout.confirmPasswordField.y - 10},
+            0.42, Muted, 1);
+        inputField(
+            frame,
+            layout.confirmPasswordField,
+            std::string(view.confirmPasswordLength, '*'),
+            view.focusedField ==
+                AuthenticationField::ConfirmPassword,
+            "re-enter password");
+    }
     const bool enabled =
         view.pendingAction == PendingLobbyAction::None;
     button(
@@ -191,6 +211,15 @@ void LobbyRenderer::drawAuthentication(
             ? "CREATING..." : "REGISTER",
         false, enabled,
         hover(layout.registerButton, mouse));
+    text(
+        frame,
+        view.authMode == AuthenticationMode::Register
+            ? "Already have an account? Sign in"
+            : "Need an account? Register",
+        {layout.authModeToggle.x, layout.authModeToggle.y + 20},
+        0.44,
+        hover(layout.authModeToggle, mouse) ? Primary : Muted,
+        1);
     if (!view.visibleError.empty()) {
         text(
             frame,
@@ -225,12 +254,28 @@ void LobbyRenderer::drawHeader(
     text(frame, "KUNG FU CHESS", {36, 42}, 0.82, Ink, 2);
     text(
         frame,
-        "LOBBY  /  " + clipped(view.authenticatedUsername, 18),
+        "LOBBY  /  " + withRating(
+            clipped(view.authenticatedUsername, 18),
+            view.authenticatedUserRating),
         {36, 68}, 0.42, Muted, 1);
     const bool enabled = view.networkActionsEnabled();
+    const bool searching =
+        view.pendingAction == PendingLobbyAction::FindMatch;
     button(
-        frame, layout.createRoomButton, "CREATE ROOM",
-        true, enabled, hover(layout.createRoomButton, mouse));
+        frame, layout.playButton,
+        searching ? "SEARCHING..." : "PLAY",
+        true, searching ? false : enabled,
+        hover(layout.playButton, mouse));
+    if (searching) {
+        button(
+            frame, layout.createRoomButton, "CANCEL",
+            false, true,
+            hover(layout.createRoomButton, mouse));
+    } else {
+        button(
+            frame, layout.createRoomButton, "CREATE ROOM",
+            true, enabled, hover(layout.createRoomButton, mouse));
+    }
     button(
         frame, layout.joinHiddenButton, "JOIN WITH CODE",
         false, enabled, hover(layout.joinHiddenButton, mouse));
@@ -246,7 +291,7 @@ void LobbyRenderer::drawHeader(
             ? Green : Red;
     text(
         frame, status,
-        {layout.createRoomButton.x - 126, 53},
+        {layout.playButton.x - 126, 53},
         0.38, statusColor, 1);
 }
 
@@ -272,14 +317,20 @@ void LobbyRenderer::drawRoomCard(
     if (active) {
         text(
             frame,
-            "WHITE   " +
-                clipped(room.white ? room.white->username : "-", 18),
+            "WHITE   " + (room.white
+                ? withRating(
+                    clipped(room.white->username, 18),
+                    room.white->rating)
+                : "-"),
             {rectangle.x + 20, rectangle.y + 82},
             0.47, Ink, 1);
         text(
             frame,
-            "BLACK   " +
-                clipped(room.black ? room.black->username : "-", 18),
+            "BLACK   " + (room.black
+                ? withRating(
+                    clipped(room.black->username, 18),
+                    room.black->rating)
+                : "-"),
             {rectangle.x + 20, rectangle.y + 107},
             0.47, Ink, 1);
         text(
@@ -290,7 +341,11 @@ void LobbyRenderer::drawRoomCard(
     } else {
         text(
             frame,
-            clipped(room.host ? room.host->username : "Unknown host", 24),
+            room.host
+                ? withRating(
+                    clipped(room.host->username, 24),
+                    room.host->rating)
+                : "Unknown host",
             {rectangle.x + 20, rectangle.y + 84},
             0.48, Ink, 1);
         text(
