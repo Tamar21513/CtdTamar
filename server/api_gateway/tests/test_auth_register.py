@@ -16,7 +16,8 @@ def test_successful_registration_is_safe(client: TestClient) -> None:
     assert response.status_code == 201
     body = response.json()
     assert body["username"] == "Player_One"
-    assert set(body) == {"id", "username", "created_at"}
+    assert body["rating"] == 1200
+    assert set(body) == {"id", "username", "rating", "created_at"}
 
     with client.app.state.db_session_factory() as session:
         user = session.scalar(select(User))

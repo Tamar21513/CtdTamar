@@ -4,7 +4,9 @@ import os
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
+from app.db.models import User
 from app.matches.manager import MatchManager, MatchOperationError
 from app.matches.bridge import GameServerBridge
 from app.rooms.models import ConnectedUser, GameRoom
@@ -71,9 +73,13 @@ class FakeBridge:
         self.closed = True
 
 
-def active_room(name: str = "Arena") -> GameRoom:
-    host = ConnectedUser(uuid4(), "host", FakeSocket())
-    guest = ConnectedUser(uuid4(), "guest", FakeSocket())
+def active_room(
+    name: str = "Arena",
+    white_username: str = "host",
+    black_username: str = "guest",
+) -> GameRoom:
+    host = ConnectedUser(uuid4(), white_username, FakeSocket())
+    guest = ConnectedUser(uuid4(), black_username, FakeSocket())
     return GameRoom(
         room_id=uuid4(),
         name=name,
@@ -322,6 +328,73 @@ async def test_game_over_releases_match_and_notifies_lifecycle() -> None:
     assert ended == [first.room_id]
     assert bridge.closed
     await manager.start_match(second)
+
+
+def test_win_by_king_capture_updates_both_players_ratings(
+    client,
+) -> None:
+    asyncio.run(_win_updates_both_players_ratings(client))
+
+
+async def _win_updates_both_players_ratings(client) -> None:
+    FakeBridge.instances.clear()
+    with client.app.state.db_session_factory() as session:
+        session.add_all(
+            [
+                User(
+                    username="RatingWinner",
+                    username_normalized="ratingwinner",
+                    password_hash="not-a-real-hash",
+                ),
+                User(
+                    username="RatingLoser",
+                    username_normalized="ratingloser",
+                    password_hash="not-a-real-hash",
+                ),
+            ]
+        )
+        session.commit()
+
+    room = active_room(
+        white_username="RatingWinner",
+        black_username="RatingLoser",
+    )
+    manager = MatchManager(
+        "game",
+        54000,
+        FakeBridge,
+        session_factory=client.app.state.db_session_factory,
+    )
+    await manager.start_match(room)
+    bridge = FakeBridge.instances[-1]
+
+    await bridge.handler(
+        "white",
+        {
+            "type": "game_over",
+            "hasSnapshot": True,
+            "snapshot": {
+                **INITIAL_STATE,
+                "gameOver": True,
+                # Only the white king survives in the final
+                # snapshot - captured pieces (including a
+                # captured king) are omitted from `pieces`
+                # entirely, so this is how a win is recognized.
+                "pieces": [{"id": 1, "token": "wK"}],
+            },
+        },
+    )
+    await asyncio.sleep(0.2)
+
+    with client.app.state.db_session_factory() as session:
+        winner = session.scalar(
+            select(User).where(User.username == "RatingWinner")
+        )
+        loser = session.scalar(
+            select(User).where(User.username == "RatingLoser")
+        )
+        assert winner.rating == 1216
+        assert loser.rating == 1184
 
 
 @async_test

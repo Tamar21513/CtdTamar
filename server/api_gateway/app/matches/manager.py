@@ -8,12 +8,17 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from fastapi import WebSocket
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
 
+from app.db.models import User
 from app.matches.allocator import (
     MatchUnavailableError,
     SingleMatchAllocator,
 )
 from app.matches.bridge import GameServerBridge
+from app.matches.rating import update_ratings
 from app.matches.schemas import (
     match_ready_message,
     match_countdown_message,
@@ -66,11 +71,13 @@ class MatchManager:
         match_ended_handler: (
             Callable[[UUID], Awaitable[None]] | None
         ) = None,
+        session_factory: sessionmaker[Session] | None = None,
     ) -> None:
         self._host = host
         self._port = port
         self._bridge_factory = bridge_factory
         self._match_ended_handler = match_ended_handler
+        self._session_factory = session_factory
         self._allocator = SingleMatchAllocator()
         self._matches: dict[UUID, ActiveMatch] = {}
         self._lock = asyncio.Lock()
@@ -454,12 +461,116 @@ class MatchManager:
         if match is None:
             return
         logger.info("match_finish room_id=%s", room_id)
+        if match.snapshot.get("gameOver") is True:
+            await self._apply_rating_update(match)
         if match.countdown_task is not None:
             match.countdown_task.cancel()
         if self._match_ended_handler is not None:
             await self._match_ended_handler(room_id)
         await match.bridge.close()
         await self._allocator.release()
+
+    @staticmethod
+    def _winner_color(snapshot: dict[str, Any]) -> str | None:
+        """Determines the winning color from the final snapshot.
+
+        The wire snapshot carries no explicit winner field (only
+        gameOver/whiteScore/blackScore cross the bridge - see
+        shared/cpp Protocol.cpp). Captured pieces are omitted from
+        the snapshot's `pieces` list entirely (see
+        GameStateSnapshotBuilder.cpp), and king capture is the sole
+        game-over trigger (see GameEngine.cpp's endGame call sites),
+        so the color whose king ("wK"/"bK") is still present in
+        `pieces` is reliably the winner.
+        """
+        pieces = snapshot.get("pieces")
+        if not isinstance(pieces, list):
+            return None
+        tokens = {
+            piece.get("token")
+            for piece in pieces
+            if isinstance(piece, dict)
+        }
+        white_king_alive = "wK" in tokens
+        black_king_alive = "bK" in tokens
+        if white_king_alive and not black_king_alive:
+            return "white"
+        if black_king_alive and not white_king_alive:
+            return "black"
+        return None
+
+    async def _apply_rating_update(self, match: ActiveMatch) -> None:
+        if self._session_factory is None:
+            return
+        winner_color = self._winner_color(match.snapshot)
+        if winner_color is None:
+            logger.warning(
+                "rating_update_skipped room_id=%s "
+                "reason=winner_undetermined",
+                match.room.room_id,
+            )
+            return
+        white = match.room.white
+        black = match.room.black
+        if white is None or black is None:
+            return
+        winner_username, loser_username = (
+            (white.username, black.username)
+            if winner_color == "white"
+            else (black.username, white.username)
+        )
+        await asyncio.to_thread(
+            self._persist_rating_update,
+            winner_username,
+            loser_username,
+        )
+
+    def _persist_rating_update(
+        self,
+        winner_username: str,
+        loser_username: str,
+    ) -> None:
+        assert self._session_factory is not None
+        try:
+            with self._session_factory() as session:
+                winner = session.scalar(
+                    select(User).where(
+                        User.username == winner_username
+                    )
+                )
+                loser = session.scalar(
+                    select(User).where(
+                        User.username == loser_username
+                    )
+                )
+                if winner is None or loser is None:
+                    logger.warning(
+                        "rating_update_skipped winner=%s loser=%s "
+                        "reason=user_not_found",
+                        winner_username,
+                        loser_username,
+                    )
+                    return
+                new_winner_rating, new_loser_rating = update_ratings(
+                    winner.rating, loser.rating
+                )
+                winner.rating = new_winner_rating
+                loser.rating = new_loser_rating
+                session.commit()
+                logger.info(
+                    "rating_update winner=%s winner_rating=%s "
+                    "loser=%s loser_rating=%s",
+                    winner_username,
+                    new_winner_rating,
+                    loser_username,
+                    new_loser_rating,
+                )
+        except SQLAlchemyError:
+            logger.error(
+                "rating_update_failed winner=%s loser=%s",
+                winner_username,
+                loser_username,
+            )
 
     async def cleanup_room(self, room_id: UUID) -> None:
         async with self._lock:

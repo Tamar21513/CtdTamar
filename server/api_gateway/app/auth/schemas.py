@@ -52,4 +52,5 @@ class UserResponse(BaseModel):
 
     id: UUID
     username: str
+    rating: int
     created_at: datetime
