@@ -12,6 +12,7 @@ namespace ctd::network {
 struct LobbyUser {
     std::string id;
     std::string username;
+    int rating = 1200;
 };
 
 struct LobbyRoom {

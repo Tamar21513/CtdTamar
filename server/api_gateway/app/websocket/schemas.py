@@ -1,12 +1,15 @@
 from typing import Any
 
 
-def connected_message(user_id: str, username: str) -> dict[str, Any]:
+def connected_message(
+    user_id: str, username: str, rating: int
+) -> dict[str, Any]:
     return {
         "type": "connected",
         "user": {
             "id": user_id,
             "username": username,
+            "rating": rating,
         },
     }
 

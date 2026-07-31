@@ -66,6 +66,7 @@ async def _handle_room_message(
                 websocket,
                 message.get("name"),
                 str(message.get("visibility", "")),
+                user.rating,
             )
             logger.info(
                 "room_create room_id=%s username=%s visibility=%s",
@@ -94,6 +95,7 @@ async def _handle_room_message(
                 user.id,
                 user.username,
                 websocket,
+                user.rating,
             )
             try:
                 await matches.start_match(room)
@@ -120,6 +122,7 @@ async def _handle_room_message(
                 user.id,
                 user.username,
                 websocket,
+                user.rating,
             )
             try:
                 await matches.start_match(room)
@@ -140,6 +143,7 @@ async def _handle_room_message(
                 user.id,
                 user.username,
                 websocket,
+                user.rating,
             )
             await websocket.send_json(watching_game_message(room))
             await matches.watch_match(room.room_id, websocket)
@@ -209,7 +213,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
     await websocket.accept()
     await websocket.send_json(
-        connected_message(str(user.id), user.username)
+        connected_message(str(user.id), user.username, user.rating)
     )
 
     try:

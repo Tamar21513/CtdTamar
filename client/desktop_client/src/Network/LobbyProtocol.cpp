@@ -96,9 +96,21 @@ GameStateSnapshot parseSnapshot(const json::object& object) {
     return Protocol::deserialize(json::serialize(envelope)).snapshot;
 }
 
+int optionalRating(const json::object& object) {
+    const auto* value = object.if_contains("rating");
+    if (!value) {
+        return 1200;
+    }
+    if (!value->is_int64()) {
+        throw std::invalid_argument("Invalid integer: rating");
+    }
+    return static_cast<int>(value->as_int64());
+}
+
 LobbyUser parseUser(const json::object& object) {
     return {requiredString(object, "id"),
-            requiredString(object, "username")};
+            requiredString(object, "username"),
+            optionalRating(object)};
 }
 
 std::optional<LobbyUser> optionalUser(

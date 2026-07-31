@@ -104,6 +104,7 @@ struct LobbyViewModel {
     std::size_t passwordLength = 0;
     std::size_t confirmPasswordLength = 0;
     std::string authenticatedUsername;
+    int authenticatedUserRating = 1200;
     std::string visibleError;
     std::string statusMessage;
     std::string roomNameInput;

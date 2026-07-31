@@ -89,6 +89,7 @@ void LobbyApplicationState::applyEvent(
             if constexpr (
                 std::is_same_v<Event, ctd::network::ConnectedEvent>) {
                 view_.authenticatedUsername = value.user.username;
+                view_.authenticatedUserRating = value.user.rating;
                 view_.statusMessage = "Loading lobby...";
             } else if constexpr (
                 std::is_same_v<Event, ctd::network::LobbySnapshotEvent>) {

@@ -1159,3 +1159,46 @@ TEST_CASE(
 
     std::filesystem::remove_all(directoryPath);
 }
+
+TEST_CASE("Connected event parses the authenticated user's rating") {
+    const auto result = LobbyProtocol::parse(
+        R"({"type":"connected","user":)"
+        R"({"id":"user-1","username":"alice","rating":1450}})");
+    REQUIRE(result.event.has_value());
+    const auto& event = std::get<ConnectedEvent>(*result.event);
+    CHECK(event.user.id == "user-1");
+    CHECK(event.user.username == "alice");
+    CHECK(event.user.rating == 1450);
+}
+
+TEST_CASE(
+    "Room host rating defaults to 1200 when missing from JSON") {
+    const auto result = LobbyProtocol::parse(
+        R"({"type":"room_created","room":{"room_id":"r1",)"
+        R"("name":"Room","visibility":"public","status":"waiting",)"
+        R"("host":{"id":"u1","username":"host"}}})");
+    REQUIRE(result.event.has_value());
+    const auto& event = std::get<RoomCreatedEvent>(*result.event);
+    REQUIRE(event.room.host.has_value());
+    CHECK(event.room.host->username == "host");
+    CHECK(event.room.host->rating == 1200);
+}
+
+TEST_CASE(
+    "Active room white/black ratings parse from lobby_snapshot") {
+    const auto result = LobbyProtocol::parse(
+        R"({"type":"lobby_snapshot","waiting_rooms":[],)"
+        R"("active_games":[{"room_id":"r2","name":"Live",)"
+        R"("status":"active","white":)"
+        R"({"id":"w1","username":"WhitePlayer","rating":1350},)"
+        R"("black":)"
+        R"({"id":"b1","username":"BlackPlayer","rating":980},)"
+        R"("spectator_count":0,"created_at":"now"}]})");
+    REQUIRE(result.event.has_value());
+    const auto& event = std::get<LobbySnapshotEvent>(*result.event);
+    REQUIRE(event.activeGames.size() == 1);
+    REQUIRE(event.activeGames[0].white.has_value());
+    REQUIRE(event.activeGames[0].black.has_value());
+    CHECK(event.activeGames[0].white->rating == 1350);
+    CHECK(event.activeGames[0].black->rating == 980);
+}

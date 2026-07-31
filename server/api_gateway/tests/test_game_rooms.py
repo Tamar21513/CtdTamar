@@ -592,3 +592,16 @@ def test_matchmaking_cleanup_keeps_login_session(
     assert client.app.state.redis_client.exists(
         f"{SESSION_PREFIX}{token}"
     ) == 1
+
+
+def test_connected_and_room_payloads_include_rating(
+    client: TestClient,
+) -> None:
+    credentials = register(client, "rating_display_user")
+    login(client, credentials)
+    with connect(client) as socket:
+        connected = socket.receive_json()
+        assert connected["type"] == "connected"
+        assert connected["user"]["rating"] == 1200
+        room = create_room(socket, "public", "Rating Room")
+        assert room["host"]["rating"] == 1200
