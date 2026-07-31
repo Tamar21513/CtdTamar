@@ -263,7 +263,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 user.username,
             )
             matches: MatchManager = websocket.app.state.match_manager
-            await matches.cleanup_room(cleanup.removed_room_id)
+            await matches.cleanup_room(
+                cleanup.removed_room_id,
+                disconnected_user_id=user.id,
+            )
         for notification in cleanup.notifications:
             await _safe_send(
                 notification.websocket,

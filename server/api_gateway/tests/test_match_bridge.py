@@ -397,6 +397,212 @@ async def _win_updates_both_players_ratings(client) -> None:
         assert loser.rating == 1184
 
 
+def test_mid_match_disconnect_updates_ratings(client) -> None:
+    asyncio.run(_mid_match_disconnect_updates_ratings(client))
+
+
+async def _mid_match_disconnect_updates_ratings(client) -> None:
+    FakeBridge.instances.clear()
+    with client.app.state.db_session_factory() as session:
+        session.add_all(
+            [
+                User(
+                    username="StayingPlayer",
+                    username_normalized="stayingplayer",
+                    password_hash="not-a-real-hash",
+                ),
+                User(
+                    username="LeavingPlayer",
+                    username_normalized="leavingplayer",
+                    password_hash="not-a-real-hash",
+                ),
+            ]
+        )
+        session.commit()
+
+    room = active_room(
+        white_username="StayingPlayer",
+        black_username="LeavingPlayer",
+    )
+    manager = MatchManager(
+        "game",
+        54000,
+        FakeBridge,
+        session_factory=client.app.state.db_session_factory,
+    )
+    await manager.start_match(room)
+    # Move the match past its countdown so cleanup treats this as
+    # a mid-match disconnect, not a pre-start cancellation.
+    manager._matches[room.room_id].game_starts_at = 0
+
+    await manager.cleanup_room(
+        room.room_id,
+        disconnected_user_id=room.black.user_id,
+    )
+
+    with client.app.state.db_session_factory() as session:
+        staying = session.scalar(
+            select(User).where(User.username == "StayingPlayer")
+        )
+        leaving = session.scalar(
+            select(User).where(User.username == "LeavingPlayer")
+        )
+        assert staying.rating == 1216
+        assert leaving.rating == 1184
+
+
+def test_disconnect_before_match_start_does_not_change_ratings(
+    client,
+) -> None:
+    asyncio.run(
+        _disconnect_before_match_start_does_not_change_ratings(
+            client
+        )
+    )
+
+
+async def _disconnect_before_match_start_does_not_change_ratings(
+    client,
+) -> None:
+    FakeBridge.instances.clear()
+    with client.app.state.db_session_factory() as session:
+        session.add_all(
+            [
+                User(
+                    username="PrestartStaying",
+                    username_normalized="prestartstaying",
+                    password_hash="not-a-real-hash",
+                ),
+                User(
+                    username="PrestartLeaving",
+                    username_normalized="prestartleaving",
+                    password_hash="not-a-real-hash",
+                ),
+            ]
+        )
+        session.commit()
+
+    room = active_room(
+        white_username="PrestartStaying",
+        black_username="PrestartLeaving",
+    )
+    manager = MatchManager(
+        "game",
+        54000,
+        FakeBridge,
+        session_factory=client.app.state.db_session_factory,
+    )
+    await manager.start_match(room)
+    # game_starts_at is left in the future (the default 3.8s
+    # countdown set by start_match), so this is a pre-start
+    # disconnect - the match_cancelled path, not a loss.
+
+    await manager.cleanup_room(
+        room.room_id,
+        disconnected_user_id=room.black.user_id,
+    )
+
+    with client.app.state.db_session_factory() as session:
+        staying = session.scalar(
+            select(User).where(User.username == "PrestartStaying")
+        )
+        leaving = session.scalar(
+            select(User).where(User.username == "PrestartLeaving")
+        )
+        assert staying.rating == 1200
+        assert leaving.rating == 1200
+
+
+def test_disconnect_after_normal_game_over_does_not_double_update(
+    client,
+) -> None:
+    asyncio.run(
+        _disconnect_after_normal_game_over_does_not_double_update(
+            client
+        )
+    )
+
+
+async def _disconnect_after_normal_game_over_does_not_double_update(
+    client,
+) -> None:
+    FakeBridge.instances.clear()
+    with client.app.state.db_session_factory() as session:
+        session.add_all(
+            [
+                User(
+                    username="FinishedWinner",
+                    username_normalized="finishedwinner",
+                    password_hash="not-a-real-hash",
+                ),
+                User(
+                    username="FinishedLoser",
+                    username_normalized="finishedloser",
+                    password_hash="not-a-real-hash",
+                ),
+            ]
+        )
+        session.commit()
+
+    room = active_room(
+        white_username="FinishedWinner",
+        black_username="FinishedLoser",
+    )
+    manager = MatchManager(
+        "game",
+        54000,
+        FakeBridge,
+        session_factory=client.app.state.db_session_factory,
+    )
+    await manager.start_match(room)
+    bridge = FakeBridge.instances[-1]
+
+    await bridge.handler(
+        "white",
+        {
+            "type": "game_over",
+            "hasSnapshot": True,
+            "snapshot": {
+                **INITIAL_STATE,
+                "gameOver": True,
+                "pieces": [{"id": 1, "token": "wK"}],
+            },
+        },
+    )
+    # Let _finish_match's task run to completion, popping the
+    # match and applying the king-capture rating update.
+    await asyncio.sleep(0.2)
+
+    with client.app.state.db_session_factory() as session:
+        winner = session.scalar(
+            select(User).where(User.username == "FinishedWinner")
+        )
+        loser = session.scalar(
+            select(User).where(User.username == "FinishedLoser")
+        )
+        assert winner.rating == 1216
+        assert loser.rating == 1184
+
+    # A late disconnect notification for the same, already-finished
+    # room must not apply a second rating update. The match was
+    # already popped by _finish_match, so cleanup_room finds
+    # nothing left to process.
+    await manager.cleanup_room(
+        room.room_id,
+        disconnected_user_id=room.black.user_id,
+    )
+
+    with client.app.state.db_session_factory() as session:
+        winner = session.scalar(
+            select(User).where(User.username == "FinishedWinner")
+        )
+        loser = session.scalar(
+            select(User).where(User.username == "FinishedLoser")
+        )
+        assert winner.rating == 1216
+        assert loser.rating == 1184
+
+
 @async_test
 async def test_live_cpp_bridge_sequence_and_authority() -> None:
     if os.getenv("CTD_RUN_LIVE_GAME_BRIDGE") is None:

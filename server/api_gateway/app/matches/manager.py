@@ -572,7 +572,11 @@ class MatchManager:
                 loser_username,
             )
 
-    async def cleanup_room(self, room_id: UUID) -> None:
+    async def cleanup_room(
+        self,
+        room_id: UUID,
+        disconnected_user_id: UUID | None = None,
+    ) -> None:
         async with self._lock:
             match = self._matches.pop(room_id, None)
         if match is not None:
@@ -593,5 +597,55 @@ class MatchManager:
                     for participant in remaining
                     if participant is not None
                 ))
+            elif match.snapshot.get("gameOver") is True:
+                # The match already concluded by king capture (see
+                # _finish_match) - _finish_match's own task may not
+                # have run yet if this cleanup won the race, so
+                # apply the same king-capture-based rating update
+                # here instead of attributing the result to
+                # whoever's connection happened to close. Whichever
+                # of _finish_match/cleanup_room pops the match first
+                # is the only one that ever sees it, so this can
+                # never double-apply.
+                await self._apply_rating_update(match)
+            elif disconnected_user_id is not None:
+                await self._apply_disconnect_rating_update(
+                    match, disconnected_user_id
+                )
             await match.bridge.close()
             await self._allocator.release()
+
+    async def _apply_disconnect_rating_update(
+        self,
+        match: ActiveMatch,
+        disconnected_user_id: UUID,
+    ) -> None:
+        if self._session_factory is None:
+            return
+        white = match.room.white
+        black = match.room.black
+        if white is None or black is None:
+            return
+        if white.user_id == disconnected_user_id:
+            loser_username, winner_username = (
+                white.username, black.username
+            )
+        elif black.user_id == disconnected_user_id:
+            loser_username, winner_username = (
+                black.username, white.username
+            )
+        else:
+            logger.warning(
+                "rating_update_skipped room_id=%s "
+                "reason=disconnecting_user_not_a_player",
+                match.room.room_id,
+            )
+            return
+        # Reuses the exact same ELO persistence used for a
+        # king-capture win/loss (_apply_rating_update above) -
+        # only the winner/loser attribution differs.
+        await asyncio.to_thread(
+            self._persist_rating_update,
+            winner_username,
+            loser_username,
+        )
