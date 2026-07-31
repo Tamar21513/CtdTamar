@@ -31,6 +31,8 @@ public:
     virtual bool joinHiddenRoom(const std::string& roomCode) = 0;
     virtual bool watchRoom(const std::string& roomId) = 0;
     virtual bool leaveSpectator(const std::string& roomId) = 0;
+    virtual bool findMatch() = 0;
+    virtual bool cancelFindMatch() = 0;
     virtual bool sendMove(
         const std::string& roomId,
         unsigned long long sequence,
@@ -71,6 +73,8 @@ public:
     bool joinHiddenRoom(const std::string& roomCode) override;
     bool watchRoom(const std::string& roomId) override;
     bool leaveSpectator(const std::string& roomId) override;
+    bool findMatch() override;
+    bool cancelFindMatch() override;
     bool sendMove(
         const std::string& roomId,
         unsigned long long sequence,

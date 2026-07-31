@@ -21,6 +21,8 @@ enum class LobbyActionType {
     CancelModal,
     JoinPublicRoom,
     WatchRoom,
+    FindMatch,
+    CancelFindMatch,
     BackToLobby,
     Logout,
     NextWaitingPage,

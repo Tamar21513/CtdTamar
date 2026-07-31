@@ -264,6 +264,24 @@ void LobbyApplicationState::applyEvent(
                 std::is_same_v<Event, ctd::network::ProtocolErrorEvent>) {
                 view_.visibleError = value.message;
                 view_.pendingAction = PendingLobbyAction::None;
+            } else if constexpr (
+                std::is_same_v<Event, ctd::network::SearchingEvent>) {
+                view_.pendingAction = PendingLobbyAction::FindMatch;
+                view_.statusMessage = "Searching for an opponent...";
+                view_.visibleError.clear();
+            } else if constexpr (
+                std::is_same_v<Event, ctd::network::MatchNotFoundEvent>) {
+                ctd::logging::defaultLogger().warn(
+                    "find_match timed out with no opponent");
+                view_.pendingAction = PendingLobbyAction::None;
+                view_.statusMessage.clear();
+                view_.visibleError =
+                    "No opponent was found. Try again.";
+            } else if constexpr (
+                std::is_same_v<
+                    Event, ctd::network::FindMatchCancelledEvent>) {
+                view_.pendingAction = PendingLobbyAction::None;
+                view_.statusMessage.clear();
             }
         },
         event);

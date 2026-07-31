@@ -75,6 +75,8 @@ public:
     std::vector<std::string> hiddenCodes;
     std::vector<std::string> watchedRooms;
     std::vector<std::string> leftSpectatorRooms;
+    int findMatchCalls = 0;
+    int cancelFindMatchCalls = 0;
     struct SentMove {
         std::string roomId;
         unsigned long long sequence;
@@ -137,6 +139,14 @@ public:
     }
     bool leaveSpectator(const std::string& roomId) override {
         leftSpectatorRooms.push_back(roomId);
+        return true;
+    }
+    bool findMatch() override {
+        ++findMatchCalls;
+        return true;
+    }
+    bool cancelFindMatch() override {
+        ++cancelFindMatchCalls;
         return true;
     }
     bool sendMove(
@@ -1201,4 +1211,90 @@ TEST_CASE(
     REQUIRE(event.activeGames[0].black.has_value());
     CHECK(event.activeGames[0].white->rating == 1350);
     CHECK(event.activeGames[0].black->rating == 980);
+}
+
+TEST_CASE(
+    "Pressing Play sends find_match and enters the searching state") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    makeLobbyReady(state, transport, controller);
+
+    controller.handle({LobbyActionType::FindMatch, {}});
+    CHECK(transport.findMatchCalls == 1);
+    CHECK(
+        state.view().pendingAction == PendingLobbyAction::FindMatch);
+
+    state.applyEvent(LobbyEvent{SearchingEvent{}});
+    CHECK(
+        state.view().pendingAction == PendingLobbyAction::FindMatch);
+    CHECK(state.view().statusMessage ==
+          "Searching for an opponent...");
+}
+
+TEST_CASE(
+    "Cancelling a search sends cancel_find_match and clears "
+    "the pending state") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    makeLobbyReady(state, transport, controller);
+
+    controller.handle({LobbyActionType::FindMatch, {}});
+    state.applyEvent(LobbyEvent{SearchingEvent{}});
+    controller.handle({LobbyActionType::CancelFindMatch, {}});
+    CHECK(transport.cancelFindMatchCalls == 1);
+
+    state.applyEvent(LobbyEvent{FindMatchCancelledEvent{}});
+    CHECK(state.view().pendingAction == PendingLobbyAction::None);
+    CHECK(state.view().statusMessage.empty());
+}
+
+TEST_CASE(
+    "match_not_found returns to the lobby with a visible error") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    makeLobbyReady(state, transport, controller);
+
+    controller.handle({LobbyActionType::FindMatch, {}});
+    state.applyEvent(LobbyEvent{SearchingEvent{}});
+    state.applyEvent(LobbyEvent{MatchNotFoundEvent{}});
+
+    CHECK(state.view().pendingAction == PendingLobbyAction::None);
+    CHECK(state.view().statusMessage.empty());
+    CHECK(state.view().visibleError ==
+          "No opponent was found. Try again.");
+    CHECK(state.view().screen == LobbyScreen::Lobby);
+}
+
+TEST_CASE(
+    "The Play button in the header maps clicks to FindMatch, and "
+    "its space becomes Cancel while searching") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    LobbyInputMapper mapper;
+    makeLobbyReady(state, transport, controller);
+    LobbyLayout layoutCalculator;
+    const auto layout = layoutCalculator.calculate(
+        1366, 768, 1, 1, 0, 0, false);
+
+    const auto playCenter = cv::Point(
+        layout.playButton.x + layout.playButton.width / 2,
+        layout.playButton.y + layout.playButton.height / 2);
+    CHECK(
+        mapper.mapClick(playCenter, state.view(), layout).type ==
+        LobbyActionType::FindMatch);
+
+    controller.handle({LobbyActionType::FindMatch, {}});
+    state.applyEvent(LobbyEvent{SearchingEvent{}});
+    const auto createRoomCenter = cv::Point(
+        layout.createRoomButton.x +
+            layout.createRoomButton.width / 2,
+        layout.createRoomButton.y +
+            layout.createRoomButton.height / 2);
+    CHECK(
+        mapper.mapClick(createRoomCenter, state.view(), layout)
+            .type == LobbyActionType::CancelFindMatch);
 }

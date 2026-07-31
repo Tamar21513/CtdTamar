@@ -97,6 +97,9 @@ struct ProtocolErrorEvent {
     std::string code;
     std::string message;
 };
+struct SearchingEvent {};
+struct MatchNotFoundEvent {};
+struct FindMatchCancelledEvent {};
 
 using LobbyEvent = std::variant<
     ConnectedEvent,
@@ -115,7 +118,10 @@ using LobbyEvent = std::variant<
     SpectatorLeftEvent,
     OpponentDisconnectedEvent,
     RoomStatusEvent,
-    ProtocolErrorEvent>;
+    ProtocolErrorEvent,
+    SearchingEvent,
+    MatchNotFoundEvent,
+    FindMatchCancelledEvent>;
 
 struct ProtocolParseResult {
     std::optional<LobbyEvent> event;
@@ -134,6 +140,8 @@ public:
     static std::string joinHiddenRoom(const std::string& roomCode);
     static std::string watchGame(const std::string& roomId);
     static std::string leaveSpectator(const std::string& roomId);
+    static std::string findMatch();
+    static std::string cancelFindMatch();
     static std::string jumpRequest(
         const std::string& roomId,
         unsigned long long sequence,

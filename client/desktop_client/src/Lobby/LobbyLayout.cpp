@@ -105,6 +105,7 @@ LobbyLayoutResult LobbyLayout::calculate(
         activePage,
         result.cardsPerPage);
 
+    result.playButton = {width - 670, 25, 110, 44};
     result.createRoomButton = {width - 548, 25, 150, 44};
     result.joinHiddenButton = {width - 386, 25, 176, 44};
     result.logoutButton = {width - 196, 25, 124, 44};

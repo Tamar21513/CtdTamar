@@ -5,7 +5,9 @@ from uuid import UUID
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.matches.manager import MatchManager, MatchOperationError
+from app.matches.play_queue import PlayQueue
 from app.rooms.manager import RoomManager, RoomOperationError
+from app.rooms.models import ConnectedUser
 from app.rooms.schemas import (
     error_message as room_error_message,
     room_created_message,
@@ -15,7 +17,12 @@ from app.websocket.authentication import (
     AUTHENTICATION_CLOSE_CODE,
     authenticate_websocket,
 )
-from app.websocket.schemas import connected_message, error_message
+from app.websocket.schemas import (
+    connected_message,
+    error_message,
+    find_match_cancelled_message,
+    searching_message,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -57,6 +64,7 @@ async def _handle_room_message(
 ) -> bool:
     manager: RoomManager = websocket.app.state.room_manager
     matches: MatchManager = websocket.app.state.match_manager
+    play_queue: PlayQueue = websocket.app.state.play_queue
     message_type = message.get("type")
     try:
         if message_type == "create_room":
@@ -154,6 +162,50 @@ async def _handle_room_message(
             )
             await _broadcast_lobby(manager)
             return True
+
+        if message_type == "find_match":
+            if await manager.is_in_room(user.id):
+                raise RoomOperationError(
+                    "already_in_room",
+                    "User is already participating in a room.",
+                )
+            connected_user = ConnectedUser(
+                user.id, user.username, websocket, user.rating
+            )
+            opponent = await play_queue.find_match(connected_user)
+            if opponent is None:
+                logger.info(
+                    "find_match_waiting username=%s",
+                    user.username,
+                )
+                await websocket.send_json(searching_message())
+                return True
+            room = await manager.match_players(
+                opponent, connected_user
+            )
+            try:
+                await matches.start_match(room)
+            except MatchOperationError as error:
+                await manager.discard_room(room.room_id)
+                await _safe_send(
+                    opponent.websocket,
+                    room_error_message(error.code, error.message),
+                )
+                raise
+            logger.info(
+                "match_found room_id=%s white=%s black=%s",
+                room.room_id,
+                room.white.username,
+                room.black.username,
+            )
+            await _broadcast_lobby(manager)
+            return True
+
+        if message_type == "cancel_find_match":
+            await play_queue.leave(user.id)
+            await websocket.send_json(find_match_cancelled_message())
+            return True
+
         if message_type == "leave_spectator":
             await manager.leave_spectator(
                 websocket, _room_uuid(message)
@@ -256,6 +308,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         return
     finally:
         manager: RoomManager = websocket.app.state.room_manager
+        play_queue: PlayQueue = websocket.app.state.play_queue
+        await play_queue.leave(user.id)
         cleanup = await manager.remove_connection(
             user.id,
             websocket,

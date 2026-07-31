@@ -259,9 +259,23 @@ void LobbyRenderer::drawHeader(
             view.authenticatedUserRating),
         {36, 68}, 0.42, Muted, 1);
     const bool enabled = view.networkActionsEnabled();
+    const bool searching =
+        view.pendingAction == PendingLobbyAction::FindMatch;
     button(
-        frame, layout.createRoomButton, "CREATE ROOM",
-        true, enabled, hover(layout.createRoomButton, mouse));
+        frame, layout.playButton,
+        searching ? "SEARCHING..." : "PLAY",
+        true, searching ? false : enabled,
+        hover(layout.playButton, mouse));
+    if (searching) {
+        button(
+            frame, layout.createRoomButton, "CANCEL",
+            false, true,
+            hover(layout.createRoomButton, mouse));
+    } else {
+        button(
+            frame, layout.createRoomButton, "CREATE ROOM",
+            true, enabled, hover(layout.createRoomButton, mouse));
+    }
     button(
         frame, layout.joinHiddenButton, "JOIN WITH CODE",
         false, enabled, hover(layout.joinHiddenButton, mouse));
@@ -277,7 +291,7 @@ void LobbyRenderer::drawHeader(
             ? Green : Red;
     text(
         frame, status,
-        {layout.createRoomButton.x - 126, 53},
+        {layout.playButton.x - 126, 53},
         0.38, statusColor, 1);
 }
 

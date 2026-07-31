@@ -53,6 +53,7 @@ enum class PendingLobbyAction {
     JoinPublicRoom,
     JoinHiddenRoom,
     WatchRoom,
+    FindMatch,
     Logout
 };
 

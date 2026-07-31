@@ -71,8 +71,15 @@ LobbyAction LobbyInputMapper::mapClick(
     }
 
     if (view.screen == LobbyScreen::Lobby) {
+        if (contains(layout.playButton, point)) {
+            return {LobbyActionType::FindMatch, {}};
+        }
         if (contains(layout.createRoomButton, point)) {
-            return {LobbyActionType::OpenCreateRoom, {}};
+            return {
+                view.pendingAction == PendingLobbyAction::FindMatch
+                    ? LobbyActionType::CancelFindMatch
+                    : LobbyActionType::OpenCreateRoom,
+                {}};
         }
         if (contains(layout.joinHiddenButton, point)) {
             return {LobbyActionType::OpenJoinHidden, {}};

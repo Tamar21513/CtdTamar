@@ -13,6 +13,7 @@ from app.db.session import create_database_engine, create_session_factory
 from app.health import build_health_response
 from app.logging_config import configure_logging
 from app.matches.manager import MatchManager
+from app.matches.play_queue import PlayQueue
 from app.rooms.manager import RoomManager
 from app.websocket.router import router as websocket_router
 
@@ -77,6 +78,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db_session_factory = create_session_factory(engine)
     app.state.redis_client = redis_client
     app.state.room_manager = RoomManager()
+    app.state.play_queue = PlayQueue()
 
     async def match_ended(room_id) -> None:
         await app.state.room_manager.finish_room(room_id)

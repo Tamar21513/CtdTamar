@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.auth.sessions import SESSION_PREFIX
+from app.matches.play_queue import PlayQueue
 
 
 PASSWORD = "StrongPassword123!"
@@ -605,3 +606,101 @@ def test_connected_and_room_payloads_include_rating(
         assert connected["user"]["rating"] == 1200
         room = create_room(socket, "public", "Rating Room")
         assert room["host"]["rating"] == 1200
+
+
+def test_find_match_pairs_two_waiting_players(
+    client: TestClient,
+) -> None:
+    first_credentials = register(client, "queue_first")
+    second_credentials = register(client, "queue_second")
+
+    login(client, first_credentials)
+    with connect(client) as first_socket:
+        first_socket.receive_json()
+        first_socket.send_json({"type": "find_match"})
+        assert first_socket.receive_json() == {"type": "searching"}
+
+        login(client, second_credentials)
+        with connect(client) as second_socket:
+            second_socket.receive_json()
+            second_socket.send_json({"type": "find_match"})
+
+            first_ready = first_socket.receive_json()
+            second_ready = second_socket.receive_json()
+            assert first_ready["type"] == "match_ready"
+            assert second_ready["type"] == "match_ready"
+            assert first_ready["color"] == "white"
+            assert second_ready["color"] == "black"
+            assert (
+                first_ready["room_id"] == second_ready["room_id"]
+            )
+
+
+def test_find_match_alone_receives_searching_ack(
+    client: TestClient,
+) -> None:
+    credentials = register(client, "lone_seeker")
+    login(client, credentials)
+    with connect(client) as socket:
+        socket.receive_json()
+        socket.send_json({"type": "find_match"})
+        assert socket.receive_json() == {"type": "searching"}
+
+
+def test_find_match_timeout_sends_match_not_found(
+    client: TestClient,
+) -> None:
+    client.app.state.play_queue = PlayQueue(timeout_seconds=0.05)
+    credentials = register(client, "timeout_seeker")
+    login(client, credentials)
+    with connect(client) as socket:
+        socket.receive_json()
+        socket.send_json({"type": "find_match"})
+        assert socket.receive_json() == {"type": "searching"}
+        assert socket.receive_json() == {"type": "match_not_found"}
+
+
+def test_disconnected_queued_player_is_not_later_paired(
+    client: TestClient,
+) -> None:
+    first_credentials = register(client, "vanish_first")
+    second_credentials = register(client, "vanish_second")
+
+    login(client, first_credentials)
+    with connect(client) as first_socket:
+        first_socket.receive_json()
+        first_socket.send_json({"type": "find_match"})
+        assert first_socket.receive_json() == {"type": "searching"}
+    # first_socket is disconnected here (context exited), which
+    # must remove it from the queue.
+
+    login(client, second_credentials)
+    with connect(client) as second_socket:
+        second_socket.receive_json()
+        second_socket.send_json({"type": "find_match"})
+        assert second_socket.receive_json() == {"type": "searching"}
+
+
+def test_cancel_find_match_removes_waiting_player(
+    client: TestClient,
+) -> None:
+    first_credentials = register(client, "cancel_first")
+    second_credentials = register(client, "cancel_second")
+
+    login(client, first_credentials)
+    with connect(client) as first_socket:
+        first_socket.receive_json()
+        first_socket.send_json({"type": "find_match"})
+        assert first_socket.receive_json() == {"type": "searching"}
+        first_socket.send_json({"type": "cancel_find_match"})
+        assert first_socket.receive_json() == {
+            "type": "find_match_cancelled"
+        }
+
+        login(client, second_credentials)
+        with connect(client) as second_socket:
+            second_socket.receive_json()
+            second_socket.send_json({"type": "find_match"})
+            assert second_socket.receive_json() == {
+                "type": "searching"
+            }

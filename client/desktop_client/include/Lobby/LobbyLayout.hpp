@@ -19,6 +19,7 @@ struct LobbyLayoutResult {
     cv::Rect authModeToggle;
     cv::Rect loginButton;
     cv::Rect registerButton;
+    cv::Rect playButton;
     cv::Rect createRoomButton;
     cv::Rect joinHiddenButton;
     cv::Rect logoutButton;

@@ -20,3 +20,15 @@ def error_message(code: str, message: str) -> dict[str, str]:
         "code": code,
         "message": message,
     }
+
+
+def searching_message() -> dict[str, str]:
+    return {"type": "searching"}
+
+
+def match_not_found_message() -> dict[str, str]:
+    return {"type": "match_not_found"}
+
+
+def find_match_cancelled_message() -> dict[str, str]:
+    return {"type": "find_match_cancelled"}

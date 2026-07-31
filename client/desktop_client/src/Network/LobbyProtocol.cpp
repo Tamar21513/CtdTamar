@@ -211,6 +211,14 @@ std::string LobbyProtocol::leaveSpectator(
         {"room_id", roomId}});
 }
 
+std::string LobbyProtocol::findMatch() {
+    return serialize({{"type", "find_match"}});
+}
+
+std::string LobbyProtocol::cancelFindMatch() {
+    return serialize({{"type", "cancel_find_match"}});
+}
+
 std::string LobbyProtocol::jumpRequest(
     const std::string& roomId,
     unsigned long long sequence,
@@ -361,6 +369,15 @@ ProtocolParseResult LobbyProtocol::parse(
             return {LobbyEvent{ProtocolErrorEvent{
                 requiredString(object, "code"),
                 requiredString(object, "message")}}, {}};
+        }
+        if (type == "searching") {
+            return {LobbyEvent{SearchingEvent{}}, {}};
+        }
+        if (type == "match_not_found") {
+            return {LobbyEvent{MatchNotFoundEvent{}}, {}};
+        }
+        if (type == "find_match_cancelled") {
+            return {LobbyEvent{FindMatchCancelledEvent{}}, {}};
         }
         return {std::nullopt, "Unsupported message type"};
     } catch (const std::exception& error) {

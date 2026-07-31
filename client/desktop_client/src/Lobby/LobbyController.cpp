@@ -274,6 +274,19 @@ void LobbyController::handle(const LobbyAction& action) {
                     "room watch failed id=" + action.value);
             }
             break;
+        case LobbyActionType::FindMatch:
+            if (beginRoomAction(PendingLobbyAction::FindMatch) &&
+                !transport_.findMatch()) {
+                state_.showError("Could not start matchmaking.");
+                ctd::logging::defaultLogger().warn(
+                    "find match failed to send");
+            }
+            break;
+        case LobbyActionType::CancelFindMatch:
+            if (view.pendingAction == PendingLobbyAction::FindMatch) {
+                transport_.cancelFindMatch();
+            }
+            break;
         case LobbyActionType::BackToLobby:
             if (view.match && view.match->spectator) {
                 transport_.leaveSpectator(view.match->roomId);
