@@ -12,6 +12,7 @@ from app.websocket.schemas import match_not_found_message
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 60.0
+RATING_RANGE = 100
 
 
 @dataclass
@@ -21,12 +22,16 @@ class _QueueEntry:
 
 
 class PlayQueue:
-    """FIFO opponent search queue for the "Play" button.
+    """Opponent search queue for the "Play" button.
 
-    No rating filtering here - any two waiting players are paired
-    immediately in arrival order. Rating-aware (+/-100) pairing is a
-    later stage; this queue only decides *when* two players are both
-    waiting, not whether they are a good match.
+    A new arrival is paired with whichever currently-waiting entry
+    is within +/-RATING_RANGE of their rating and closest to it; if
+    several waiting entries are equally close, the one that has been
+    waiting longest wins (entries are only ever appended to
+    `_waiting`, never reordered, so a first-match-wins scan over
+    `_waiting.items()` in insertion order already yields "oldest
+    among ties"). If nobody waiting is in range, the new arrival
+    joins the queue and waits.
     """
 
     def __init__(
@@ -49,17 +54,27 @@ class PlayQueue:
         user: ConnectedUser,
     ) -> ConnectedUser | None:
         """Adds `user` to the queue. Returns the opponent to pair
-        with immediately (removing both from the queue) if one was
-        already waiting, or None if `user` is now waiting alone (a
-        timeout task is scheduled to notify them if nobody arrives
-        within the configured duration). Calling this again for a
-        user who is already queued is a harmless no-op."""
+        with immediately (removing both from the queue) if a waiting
+        entry within +/-RATING_RANGE was found (closest rating wins;
+        ties go to whoever has waited longest - see class docstring),
+        or None if `user` is now waiting alone (a timeout task is
+        scheduled to notify them if nobody arrives within the
+        configured duration). Calling this again for a user who is
+        already queued is a harmless no-op."""
         async with self._lock:
             if user.user_id in self._waiting:
                 return None
-            if self._waiting:
-                _, entry = next(iter(self._waiting.items()))
-                del self._waiting[entry.user.user_id]
+            best_id: UUID | None = None
+            best_distance: int | None = None
+            for candidate_id, entry in self._waiting.items():
+                distance = abs(entry.user.rating - user.rating)
+                if distance <= RATING_RANGE and (
+                    best_distance is None or distance < best_distance
+                ):
+                    best_id = candidate_id
+                    best_distance = distance
+            if best_id is not None:
+                entry = self._waiting.pop(best_id)
                 if entry.timeout_task is not None:
                     entry.timeout_task.cancel()
                 return entry.user
