@@ -70,6 +70,7 @@ struct RoomReadyView {
     std::string roomName;
     std::string assignedColor;
     std::string opponentUsername;
+    int opponentRating = 1200;
 };
 enum class MatchPhase {
     Loading,
@@ -91,6 +92,8 @@ struct AuthoritativeMatchView {
     MatchPhase phase = MatchPhase::Loading;
     std::string gameStartsAt;
     std::string countdownValue;
+    int whiteRating = 1200;
+    int blackRating = 1200;
 };
 
 struct LobbyViewModel {

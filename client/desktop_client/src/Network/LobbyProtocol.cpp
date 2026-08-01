@@ -54,10 +54,11 @@ std::string requiredUtcTimestamp(
 
 int optionalInteger(
     const json::object& object,
-    const char* key) {
+    const char* key,
+    int fallback = 0) {
     const auto* value = object.if_contains(key);
     if (!value) {
-        return 0;
+        return fallback;
     }
     if (!value->is_int64() || value->as_int64() < 0) {
         throw std::invalid_argument(std::string("Invalid integer: ") + key);
@@ -299,7 +300,9 @@ ProtocolParseResult LobbyProtocol::parse(
                 requiredString(object, "opponent"),
                 requiredUnsigned(object, "revision"),
                 parseSnapshot(requiredObject(object, "state")),
-                requiredUtcTimestamp(object, "game_starts_at")}}, {}};
+                requiredUtcTimestamp(object, "game_starts_at"),
+                optionalInteger(object, "white_rating", 1200),
+                optionalInteger(object, "black_rating", 1200)}}, {}};
         }
         if (type == "match_countdown") {
             const auto* raw = object.if_contains("value");
@@ -378,6 +381,10 @@ ProtocolParseResult LobbyProtocol::parse(
         }
         if (type == "find_match_cancelled") {
             return {LobbyEvent{FindMatchCancelledEvent{}}, {}};
+        }
+        if (type == "rating_updated") {
+            return {LobbyEvent{RatingUpdatedEvent{
+                optionalInteger(object, "rating")}}, {}};
         }
         return {std::nullopt, "Unsupported message type"};
     } catch (const std::exception& error) {

@@ -619,6 +619,23 @@ def test_connected_and_room_payloads_include_rating(
         assert room["host"]["rating"] == 1200
 
 
+def test_room_create_uses_fresh_rating_not_connect_time_snapshot(
+    client: TestClient,
+) -> None:
+    credentials = register(client, "midconn_rating_user")
+    login(client, credentials)
+    with connect(client) as socket:
+        connected = socket.receive_json()
+        assert connected["user"]["rating"] == 1200
+        # Simulate a rating change (e.g. from a match elsewhere)
+        # happening after this websocket connected but before it
+        # takes its next lobby action - the room must reflect the
+        # DB's current value, not the rating cached at connect time.
+        set_rating(client, "midconn_rating_user", 1450)
+        room = create_room(socket, "public", "Fresh Rating Room")
+        assert room["host"]["rating"] == 1450
+
+
 def test_find_match_pairs_two_waiting_players(
     client: TestClient,
 ) -> None:

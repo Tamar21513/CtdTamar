@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.db.models import User
 from app.matches.manager import MatchManager, MatchOperationError
 from app.matches.bridge import GameServerBridge
+from app.matches.schemas import match_ready_message
 from app.rooms.models import ConnectedUser, GameRoom
 
 
@@ -328,6 +329,91 @@ async def test_game_over_releases_match_and_notifies_lifecycle() -> None:
     assert ended == [first.room_id]
     assert bridge.closed
     await manager.start_match(second)
+
+
+def test_match_ready_message_includes_ratings() -> None:
+    message = match_ready_message(
+        uuid4(),
+        "white",
+        "opponent",
+        1,
+        {"a": 1},
+        "2024-01-01T00:00:00Z",
+        1350,
+        1180,
+    )
+    assert message["white_rating"] == 1350
+    assert message["black_rating"] == 1180
+
+
+def test_win_by_king_capture_pushes_rating_updated_to_both_players(
+    client,
+) -> None:
+    asyncio.run(_win_pushes_rating_updated_to_both_players(client))
+
+
+async def _win_pushes_rating_updated_to_both_players(client) -> None:
+    FakeBridge.instances.clear()
+    with client.app.state.db_session_factory() as session:
+        session.add_all(
+            [
+                User(
+                    username="PushWinner",
+                    username_normalized="pushwinner",
+                    password_hash="not-a-real-hash",
+                ),
+                User(
+                    username="PushLoser",
+                    username_normalized="pushloser",
+                    password_hash="not-a-real-hash",
+                ),
+            ]
+        )
+        session.commit()
+
+    room = active_room(
+        white_username="PushWinner",
+        black_username="PushLoser",
+    )
+    manager = MatchManager(
+        "game",
+        54000,
+        FakeBridge,
+        session_factory=client.app.state.db_session_factory,
+    )
+    await manager.start_match(room)
+    bridge = FakeBridge.instances[-1]
+
+    await bridge.handler(
+        "white",
+        {
+            "type": "game_over",
+            "hasSnapshot": True,
+            "snapshot": {
+                **INITIAL_STATE,
+                "gameOver": True,
+                "pieces": [{"id": 1, "token": "wK"}],
+            },
+        },
+    )
+    await asyncio.sleep(0.2)
+
+    winner_updates = [
+        message
+        for message in room.white.websocket.messages
+        if message["type"] == "rating_updated"
+    ]
+    loser_updates = [
+        message
+        for message in room.black.websocket.messages
+        if message["type"] == "rating_updated"
+    ]
+    assert winner_updates == [
+        {"type": "rating_updated", "rating": 1216}
+    ]
+    assert loser_updates == [
+        {"type": "rating_updated", "rating": 1184}
+    ]
 
 
 def test_win_by_king_capture_updates_both_players_ratings(

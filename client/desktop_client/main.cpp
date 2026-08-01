@@ -1,6 +1,7 @@
 #include "App/VisualApp.hpp"
 #include "App/LobbyApp.hpp"
 #include "Client/ClientApp.hpp"
+#include "Network/ClientTransportConfig.hpp"
 
 #include <charconv>
 #include <exception>
@@ -74,15 +75,13 @@ int main(int argc, char* argv[]) {
         const int endpointArguments =
             argc - endpointIndex;
         if (
-            (mode == ClientMode::Lobby &&
-             endpointArguments != 0) ||
-            (mode != ClientMode::Lobby &&
-             endpointArguments != 0 &&
+            endpointArguments != 0 &&
             endpointArguments != 2
-            )
         ) {
             std::cerr
                 << "Usage: ctd_client.exe [lobby]\n"
+                << "       ctd_client.exe lobby "
+                   "[server-host port]\n"
                 << "       ctd_client.exe game "
                    "[server-host port]\n"
                 << "       ctd_client.exe text "
@@ -92,7 +91,15 @@ int main(int argc, char* argv[]) {
 
         if (mode == ClientMode::Lobby) {
             ctd::lobby::LobbyApp app;
-            app.run();
+            if (endpointArguments == 0) {
+                app.run();
+            }
+            else {
+                app.run(ctd::network::makeTransportConfig(
+                    argv[endpointIndex],
+                    parsePort(argv[endpointIndex + 1])
+                ));
+            }
         }
         else if (mode == ClientMode::Text) {
             ClientApp app;

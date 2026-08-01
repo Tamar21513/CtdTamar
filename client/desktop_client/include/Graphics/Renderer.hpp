@@ -51,7 +51,9 @@ public:
         RenderOverlayMode overlayMode =
             RenderOverlayMode::Status,
         bool showSpectatorBackButton = false,
-        const std::string& countdownValue = ""
+        const std::string& countdownValue = "",
+        int whiteRating = -1,
+        int blackRating = -1
     );
 
     cv::Mat cropTransparentMargins(const cv::Mat& sprite) const;

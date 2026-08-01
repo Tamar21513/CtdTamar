@@ -554,12 +554,13 @@ TEST_CASE("Structured errors disconnect and logout clear state") {
 TEST_CASE("Game and spectator events open honest placeholders") {
     LobbyApplicationState state;
     state.applyEvent(LobbyEvent{GameStartedEvent{
-        "room-1", "Named Match", "white", {"2", "bob"}}});
+        "room-1", "Named Match", "white", {"2", "bob", 1450}}});
     CHECK(state.view().screen == LobbyScreen::RoomReady);
     REQUIRE(state.view().roomReady.has_value());
     CHECK(state.view().roomReady->assignedColor == "white");
     CHECK(state.view().roomReady->roomName == "Named Match");
     CHECK(state.view().roomReady->opponentUsername == "bob");
+    CHECK(state.view().roomReady->opponentRating == 1450);
 
     state.applyEvent(LobbyEvent{WatchingGameEvent{
         "room-1",
@@ -720,6 +721,22 @@ TEST_CASE("match ready opens authoritative board and stores color") {
     CHECK(state.view().match->countdownValue == "GO");
 }
 
+TEST_CASE("match ready stores both players' ratings") {
+    LobbyApplicationState state;
+    state.applyEvent(MatchReadyEvent{
+        "room-1", "white", "bob", 1, matchSnapshot(),
+        "2026-07-30T12:00:00Z", 1350, 1180});
+    REQUIRE(state.view().match.has_value());
+    CHECK(state.view().match->whiteRating == 1350);
+    CHECK(state.view().match->blackRating == 1180);
+}
+
+TEST_CASE("rating_updated event refreshes the displayed rating") {
+    LobbyApplicationState state;
+    state.applyEvent(LobbyEvent{RatingUpdatedEvent{1234}});
+    CHECK(state.view().authenticatedUserRating == 1234);
+}
+
 TEST_CASE("countdown blocks all player board input") {
     LobbyApplicationState state;
     FakeLobbyTransport transport;
@@ -848,6 +865,11 @@ TEST_CASE("gameplay presentation has no captions") {
         58 * 8,
         58 * 8);
     CHECK((button & playableBoard).area() == 0);
+
+    player.screen = LobbyScreen::Game;
+    player.match->snapshot.gameOver = true;
+    const auto finishedPresentation = gameplayPresentation(player);
+    CHECK(finishedPresentation.showSpectatorBackButton);
 }
 
 TEST_CASE("jump animation transitions through short rest to idle") {

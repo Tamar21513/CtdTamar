@@ -9,6 +9,8 @@ def match_ready_message(
     revision: int,
     state: dict[str, Any],
     game_starts_at: str,
+    white_rating: int,
+    black_rating: int,
 ) -> dict[str, Any]:
     return {
         "type": "match_ready",
@@ -18,6 +20,8 @@ def match_ready_message(
         "revision": revision,
         "state": state,
         "game_starts_at": game_starts_at,
+        "white_rating": white_rating,
+        "black_rating": black_rating,
     }
 
 

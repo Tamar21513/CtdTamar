@@ -588,12 +588,15 @@ void LobbyRenderer::drawPlaceholder(
             0.55, Muted, 1);
         text(
             frame,
-            "You are " + view.roomReady->assignedColor,
+            "You are " + view.roomReady->assignedColor + "  (" +
+                std::to_string(view.authenticatedUserRating) + ")",
             {center.x + 60, center.y + 150},
             0.68, Ink, 1);
         text(
             frame,
-            "Opponent: " + view.roomReady->opponentUsername,
+            "Opponent: " + withRating(
+                view.roomReady->opponentUsername,
+                view.roomReady->opponentRating),
             {center.x + 60, center.y + 195},
             0.62, Ink, 1);
         text(

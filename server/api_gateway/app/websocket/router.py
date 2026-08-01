@@ -1,9 +1,12 @@
+import asyncio
 import json
 import logging
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.db.models import User
 from app.matches.manager import MatchManager, MatchOperationError
 from app.matches.play_queue import PlayQueue
 from app.rooms.manager import RoomManager, RoomOperationError
@@ -41,6 +44,22 @@ async def _safe_send(
         return False
 
 
+async def _current_rating(
+    websocket: WebSocket, user_id, fallback: int
+) -> int:
+    session_factory = websocket.app.state.db_session_factory
+
+    def _fetch() -> int:
+        try:
+            with session_factory() as session:
+                row = session.get(User, user_id)
+                return row.rating if row is not None else fallback
+        except SQLAlchemyError:
+            return fallback
+
+    return await asyncio.to_thread(_fetch)
+
+
 async def _broadcast_lobby(manager: RoomManager) -> None:
     subscribers, snapshot = await manager.lobby_delivery()
     for subscriber in subscribers:
@@ -74,7 +93,7 @@ async def _handle_room_message(
                 websocket,
                 message.get("name"),
                 str(message.get("visibility", "")),
-                user.rating,
+                await _current_rating(websocket, user.id, user.rating),
             )
             logger.info(
                 "room_create room_id=%s username=%s visibility=%s",
@@ -103,7 +122,7 @@ async def _handle_room_message(
                 user.id,
                 user.username,
                 websocket,
-                user.rating,
+                await _current_rating(websocket, user.id, user.rating),
             )
             try:
                 await matches.start_match(room)
@@ -130,7 +149,7 @@ async def _handle_room_message(
                 user.id,
                 user.username,
                 websocket,
-                user.rating,
+                await _current_rating(websocket, user.id, user.rating),
             )
             try:
                 await matches.start_match(room)
@@ -151,7 +170,7 @@ async def _handle_room_message(
                 user.id,
                 user.username,
                 websocket,
-                user.rating,
+                await _current_rating(websocket, user.id, user.rating),
             )
             await websocket.send_json(watching_game_message(room))
             await matches.watch_match(room.room_id, websocket)
@@ -170,7 +189,10 @@ async def _handle_room_message(
                     "User is already participating in a room.",
                 )
             connected_user = ConnectedUser(
-                user.id, user.username, websocket, user.rating
+                user.id,
+                user.username,
+                websocket,
+                await _current_rating(websocket, user.id, user.rating),
             )
             opponent = await play_queue.find_match(connected_user)
             if opponent is None:

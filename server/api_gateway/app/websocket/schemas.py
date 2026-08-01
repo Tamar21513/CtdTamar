@@ -32,3 +32,7 @@ def match_not_found_message() -> dict[str, str]:
 
 def find_match_cancelled_message() -> dict[str, str]:
     return {"type": "find_match_cancelled"}
+
+
+def rating_updated_message(rating: int) -> dict[str, int | str]:
+    return {"type": "rating_updated", "rating": rating}

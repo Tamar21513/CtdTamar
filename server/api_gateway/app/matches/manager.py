@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 from uuid import UUID
 
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
@@ -28,7 +28,8 @@ from app.matches.schemas import (
     match_state_message,
     move_result_message,
 )
-from app.rooms.models import GameRoom
+from app.rooms.models import ConnectedUser, GameRoom
+from app.websocket.schemas import rating_updated_message
 
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,8 @@ class MatchManager:
                     1,
                     snapshot,
                     game_starts_at_iso,
+                    room.white.rating,
+                    room.black.rating,
                 ),
             )
             await self._send(
@@ -151,6 +154,8 @@ class MatchManager:
                     1,
                     snapshot,
                     game_starts_at_iso,
+                    room.white.rating,
+                    room.black.rating,
                 ),
             )
             match.countdown_task = asyncio.create_task(
@@ -189,7 +194,8 @@ class MatchManager:
             if time.time() < match.game_starts_at:
                 message = match_ready_message(
                     room_id, "spectator", "", match.revision,
-                    match.snapshot, match.game_starts_at_iso
+                    match.snapshot, match.game_starts_at_iso,
+                    match.room.white.rating, match.room.black.rating,
                 )
             else:
                 message = match_snapshot_message(
@@ -514,22 +520,39 @@ class MatchManager:
         black = match.room.black
         if white is None or black is None:
             return
-        winner_username, loser_username = (
-            (white.username, black.username)
-            if winner_color == "white"
-            else (black.username, white.username)
+        winner_conn, loser_conn = (
+            (white, black) if winner_color == "white" else (black, white)
         )
-        await asyncio.to_thread(
+        winner_username, loser_username = (
+            winner_conn.username, loser_conn.username
+        )
+        result = await asyncio.to_thread(
             self._persist_rating_update,
             winner_username,
             loser_username,
         )
+        if result is not None:
+            new_winner_rating, new_loser_rating = result
+            await self._send_rating_update(winner_conn, new_winner_rating)
+            await self._send_rating_update(loser_conn, new_loser_rating)
+
+    async def _send_rating_update(
+        self,
+        connected_user: ConnectedUser,
+        rating: int,
+    ) -> None:
+        try:
+            await connected_user.websocket.send_json(
+                rating_updated_message(rating)
+            )
+        except (WebSocketDisconnect, RuntimeError):
+            pass
 
     def _persist_rating_update(
         self,
         winner_username: str,
         loser_username: str,
-    ) -> None:
+    ) -> tuple[int, int] | None:
         assert self._session_factory is not None
         try:
             with self._session_factory() as session:
@@ -550,7 +573,7 @@ class MatchManager:
                         winner_username,
                         loser_username,
                     )
-                    return
+                    return None
                 new_winner_rating, new_loser_rating = update_ratings(
                     winner.rating, loser.rating
                 )
@@ -565,12 +588,14 @@ class MatchManager:
                     loser_username,
                     new_loser_rating,
                 )
+                return new_winner_rating, new_loser_rating
         except SQLAlchemyError:
             logger.error(
                 "rating_update_failed winner=%s loser=%s",
                 winner_username,
                 loser_username,
             )
+            return None
 
     async def cleanup_room(
         self,
@@ -627,13 +652,9 @@ class MatchManager:
         if white is None or black is None:
             return
         if white.user_id == disconnected_user_id:
-            loser_username, winner_username = (
-                white.username, black.username
-            )
+            loser_conn, winner_conn = white, black
         elif black.user_id == disconnected_user_id:
-            loser_username, winner_username = (
-                black.username, white.username
-            )
+            loser_conn, winner_conn = black, white
         else:
             logger.warning(
                 "rating_update_skipped room_id=%s "
@@ -641,11 +662,18 @@ class MatchManager:
                 match.room.room_id,
             )
             return
+        winner_username, loser_username = (
+            winner_conn.username, loser_conn.username
+        )
         # Reuses the exact same ELO persistence used for a
         # king-capture win/loss (_apply_rating_update above) -
         # only the winner/loser attribution differs.
-        await asyncio.to_thread(
+        result = await asyncio.to_thread(
             self._persist_rating_update,
             winner_username,
             loser_username,
         )
+        if result is not None:
+            new_winner_rating, new_loser_rating = result
+            await self._send_rating_update(winner_conn, new_winner_rating)
+            await self._send_rating_update(loser_conn, new_loser_rating)

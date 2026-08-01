@@ -79,7 +79,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:${API_GATEWAY_PORT:-8000}:${API_GATEWAY_PORT:-8000}"
+      - "${API_GATEWAY_BIND_HOST:-0.0.0.0}:${API_GATEWAY_PORT:-8000}:${API_GATEWAY_PORT:-8000}"
     depends_on:
       postgres:
         condition: service_healthy

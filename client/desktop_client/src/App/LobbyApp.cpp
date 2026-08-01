@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <deque>
 #include <chrono>
+#include <utility>
 
 namespace ctd::lobby {
 namespace {
@@ -105,7 +106,7 @@ std::vector<MoveHistoryEntry> convertHistory(
 
 }  // namespace
 
-void LobbyApp::run() {
+void LobbyApp::run(ctd::network::ClientTransportConfig config) {
     auto& logger = ctd::logging::defaultLogger();
     logger.info("LobbyApp starting");
     cv::namedWindow(WindowName, cv::WINDOW_NORMAL);
@@ -116,7 +117,7 @@ void LobbyApp::run() {
     cv::setMouseCallback(WindowName, mouseCallback, &pointer);
 
     LobbyApplicationState state;
-    LobbyTransport transport;
+    LobbyTransport transport(std::move(config));
     LobbyController controller(state, transport);
     LobbyLayout layoutCalculator;
     LobbyInputMapper inputMapper;
@@ -186,16 +187,24 @@ void LobbyApp::run() {
                         LobbyActionType::BackToLobby, {}});
                 } else if (
                     state.view().screen == LobbyScreen::Game) {
-                    const int boardX =
-                        event.position.x - boardStartX;
-                    const int boardY =
-                        event.position.y - boardStartY;
-                    if (boardX >= 0 && boardY >= 0 &&
-                        boardX < cellSize * 8 &&
-                        boardY < cellSize * 8) {
-                        controller.gameBoardClick(
-                            boardY / cellSize,
-                            boardX / cellSize);
+                    if (state.view().match &&
+                        state.view().match->snapshot.gameOver &&
+                        Renderer::spectatorBackButtonRect().contains(
+                            event.position)) {
+                        controller.handle({
+                            LobbyActionType::BackToLobby, {}});
+                    } else {
+                        const int boardX =
+                            event.position.x - boardStartX;
+                        const int boardY =
+                            event.position.y - boardStartY;
+                        if (boardX >= 0 && boardY >= 0 &&
+                            boardX < cellSize * 8 &&
+                            boardY < cellSize * 8) {
+                            controller.gameBoardClick(
+                                boardY / cellSize,
+                                boardX / cellSize);
+                        }
                     }
                 } else if (
                     state.view().screen !=
@@ -270,7 +279,9 @@ void LobbyApp::run() {
                 RenderOverlayMode::None,
                 presentation.showSpectatorBackButton,
                 match.phase == MatchPhase::Countdown
-                    ? match.countdownValue : "");
+                    ? match.countdownValue : "",
+                match.whiteRating,
+                match.blackRating);
         } else {
             previousFrame = std::chrono::steady_clock::now();
             const auto frame = renderer.render(

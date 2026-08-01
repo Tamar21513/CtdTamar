@@ -2,6 +2,7 @@
 #include "ThirdParty/doctest.h"
 
 #include "Network/ApiClient.hpp"
+#include "Network/ClientTransportConfig.hpp"
 #include "Network/LobbyProtocol.hpp"
 #include "Network/LobbyClient.hpp"
 #include "Network/SessionCookieJar.hpp"
@@ -102,6 +103,24 @@ TEST_CASE("SessionCookieJar ignores malformed Set-Cookie") {
     jar.acceptSetCookie("ctd_session");
     jar.acceptSetCookie("=missing-name");
     CHECK_FALSE(jar.hasSession());
+}
+
+TEST_CASE("rating_updated message parses into RatingUpdatedEvent") {
+    auto update = LobbyProtocol::parse(
+        R"({"type":"rating_updated","rating":1234})");
+    INFO(update.error);
+    REQUIRE(update.event.has_value());
+    REQUIRE(std::holds_alternative<RatingUpdatedEvent>(*update.event));
+    CHECK(std::get<RatingUpdatedEvent>(*update.event).rating == 1234);
+}
+
+TEST_CASE("makeTransportConfig builds http and ws URLs from host and port") {
+    const auto config =
+        ctd::network::makeTransportConfig("192.168.1.50", 8000);
+    CHECK(config.apiBaseUrl == "http://192.168.1.50:8000");
+    CHECK(config.websocketUrl == "ws://192.168.1.50:8000/ws");
+    const auto defaulted = ctd::network::ClientTransportConfig{};
+    CHECK(defaulted.apiBaseUrl == "http://127.0.0.1:8000");
 }
 
 TEST_CASE("ApiClient parses registration login me and logout") {
@@ -339,6 +358,7 @@ TEST_CASE("authoritative snapshots and results parse") {
         R"({"type":"match_ready","room_id":"room-1",)"
         R"("color":"white","opponent":"bob","revision":1,)"
         R"("game_starts_at":"2026-07-30T12:00:00Z",)"
+        R"("white_rating":1350,"black_rating":1180,)"
         "\"state\":" + state + "}");
     INFO(ready.error);
     REQUIRE(ready.event.has_value());
@@ -348,6 +368,8 @@ TEST_CASE("authoritative snapshots and results parse") {
     CHECK(event.revision == 1);
     CHECK(event.state.pieces.size() == 1);
     CHECK(event.gameStartsAt == "2026-07-30T12:00:00Z");
+    CHECK(event.whiteRating == 1350);
+    CHECK(event.blackRating == 1180);
 
     auto countdown = LobbyProtocol::parse(
         R"({"type":"match_countdown","room_id":"room-1",)"
