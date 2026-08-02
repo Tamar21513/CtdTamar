@@ -9,10 +9,11 @@ namespace ctd::lobby {
 
 GameplayPresentation gameplayPresentation(
     const LobbyViewModel& view) {
-    return {
-        "",
-        "",
-        view.screen == LobbyScreen::SpectatorGame};
+    const bool showBackButton =
+        view.screen == LobbyScreen::SpectatorGame ||
+        (view.screen == LobbyScreen::Game &&
+         view.match && view.match->snapshot.gameOver);
+    return {"", "", showBackButton};
 }
 
 bool LobbyViewModel::networkActionsEnabled() const {
@@ -140,7 +141,8 @@ void LobbyApplicationState::applyEvent(
                     value.roomId,
                     value.roomName,
                     value.color,
-                    value.opponent.username};
+                    value.opponent.username,
+                    value.opponent.rating};
                 view_.screen = LobbyScreen::RoomReady;
                 view_.pendingAction = PendingLobbyAction::None;
             } else if constexpr (
@@ -172,7 +174,9 @@ void LobbyApplicationState::applyEvent(
                     value.color == "spectator",
                     MatchPhase::Countdown,
                     value.gameStartsAt,
-                    "3"};
+                    "3",
+                    value.whiteRating,
+                    value.blackRating};
                 view_.pendingRoomId = value.roomId;
                 view_.screen = value.color == "spectator"
                     ? LobbyScreen::SpectatorGame
@@ -282,6 +286,9 @@ void LobbyApplicationState::applyEvent(
                     Event, ctd::network::FindMatchCancelledEvent>) {
                 view_.pendingAction = PendingLobbyAction::None;
                 view_.statusMessage.clear();
+            } else if constexpr (
+                std::is_same_v<Event, ctd::network::RatingUpdatedEvent>) {
+                view_.authenticatedUserRating = value.rating;
             }
         },
         event);

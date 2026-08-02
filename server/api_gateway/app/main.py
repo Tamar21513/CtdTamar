@@ -12,6 +12,8 @@ from app.config import Settings, get_settings
 from app.db.session import create_database_engine, create_session_factory
 from app.health import build_health_response
 from app.logging_config import configure_logging
+from app.matches.allocator import ShardLauncherClient
+from app.matches.history_router import router as match_history_router
 from app.matches.manager import MatchManager
 from app.matches.play_queue import PlayQueue
 from app.rooms.manager import RoomManager
@@ -91,11 +93,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             except RuntimeError:
                 pass
 
+    shard_launcher = (
+        ShardLauncherClient(
+            settings.CTD_SHARD_LAUNCHER_HOST,
+            settings.CTD_SHARD_LAUNCHER_PORT,
+        )
+        if settings.CTD_SHARD_LAUNCHER_HOST.strip()
+        else None
+    )
     app.state.match_manager = MatchManager(
         settings.CTD_GAME_SERVER_HOST,
         settings.CTD_GAME_SERVER_PORT,
         match_ended_handler=match_ended,
         session_factory=app.state.db_session_factory,
+        additional_shards=settings.game_server_shards,
+        shard_launcher=shard_launcher,
+        max_dynamic_shards=settings.CTD_MAX_DYNAMIC_SHARDS,
     )
     try:
         yield
@@ -113,6 +126,7 @@ app = FastAPI(
 )
 app.include_router(auth_router)
 app.include_router(websocket_router)
+app.include_router(match_history_router)
 
 
 @app.exception_handler(Exception)

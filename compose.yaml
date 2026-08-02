@@ -69,6 +69,10 @@ services:
       API_GATEWAY_PORT: ${API_GATEWAY_PORT:-8000}
       CTD_GAME_SERVER_HOST: ${CTD_GAME_SERVER_HOST:-host.docker.internal}
       CTD_GAME_SERVER_PORT: ${CTD_GAME_SERVER_PORT:-5050}
+      CTD_GAME_SERVER_SHARDS: ${CTD_GAME_SERVER_SHARDS:-}
+      CTD_SHARD_LAUNCHER_HOST: ${CTD_SHARD_LAUNCHER_HOST:-}
+      CTD_SHARD_LAUNCHER_PORT: ${CTD_SHARD_LAUNCHER_PORT:-5100}
+      CTD_MAX_DYNAMIC_SHARDS: ${CTD_MAX_DYNAMIC_SHARDS:-50}
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-ctd_session}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-3600}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
@@ -79,7 +83,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:${API_GATEWAY_PORT:-8000}:${API_GATEWAY_PORT:-8000}"
+      - "${API_GATEWAY_BIND_HOST:-0.0.0.0}:${API_GATEWAY_PORT:-8000}:${API_GATEWAY_PORT:-8000}"
     depends_on:
       postgres:
         condition: service_healthy

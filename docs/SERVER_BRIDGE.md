@@ -19,10 +19,14 @@ host connection is white and the guest connection is black. It forwards
 move coordinates and sequence numbers, then publishes only snapshots and
 accept/reject reasons returned by C++.
 
-Stage 3G deliberately supports one active match at a time because the
-existing C++ server owns one `GameEngine`. A second room activation receives
-`match_unavailable`. Concurrent games require a later allocator/process
-model.
+Each `ctd_server.exe` process is deliberately a single-match server (it
+owns exactly one `GameEngine`). Concurrent matches are supported by
+running several independent `ctd_server.exe` processes, one per port,
+and letting the Gateway's shard-pool allocator (`app/matches/allocator.py`)
+hand out a free one per match. A room activation only receives
+`match_unavailable` once every configured shard is already hosting a
+match. For unbounded/dynamic shard spawning instead of a fixed
+pre-started list, see `docs/SHARD_LAUNCHER.md`.
 
 ## Windows and Docker Desktop startup
 
@@ -33,6 +37,17 @@ a room:
 cmake --build build --config Release --target ctd_server
 .\build\server\chess_server\Release\ctd_server.exe 5050
 ```
+
+To support more than one concurrent match, start additional shards on
+their own ports the same way:
+
+```powershell
+.\build\server\chess_server\Release\ctd_server.exe 5051
+```
+
+and register each one as an extra shard by setting
+`CTD_GAME_SERVER_SHARDS=<host>:5051` (in `.env`), in addition to the
+primary `CTD_GAME_SERVER_HOST`/`CTD_GAME_SERVER_PORT` shard.
 
 In another PowerShell window:
 

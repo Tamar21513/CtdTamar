@@ -32,6 +32,7 @@ public:
         const std::string& password);
     AuthResult currentUser();
     AuthResult logout();
+    MatchHistoryResult getMatchHistory();
 
     bool connectRealtime();
     void disconnectRealtime();

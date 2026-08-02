@@ -43,6 +43,22 @@ struct AuthenticatedUser {
     std::string createdAt;
 };
 
+struct MatchHistoryEntry {
+    std::string opponent;
+    std::string color;
+    std::string result;
+    int ratingBefore = 1200;
+    int ratingAfter = 1200;
+    std::string reason;
+    std::string endedAt;
+};
+
+struct MatchHistoryResult {
+    bool succeeded = false;
+    std::vector<MatchHistoryEntry> entries;
+    std::string message;
+};
+
 enum class AuthResultKind {
     Success,
     InvalidCredentials,
@@ -80,6 +96,7 @@ public:
         const std::string& password);
     AuthResult me();
     AuthResult logout();
+    MatchHistoryResult getMatchHistory();
 
 private:
     AuthResult credentialsRequest(

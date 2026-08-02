@@ -262,6 +262,10 @@ void LobbyRenderer::drawHeader(
     const bool searching =
         view.pendingAction == PendingLobbyAction::FindMatch;
     button(
+        frame, layout.historyButton, "HISTORY",
+        false, view.pendingAction == PendingLobbyAction::None,
+        hover(layout.historyButton, mouse));
+    button(
         frame, layout.playButton,
         searching ? "SEARCHING..." : "PLAY",
         true, searching ? false : enabled,
@@ -291,7 +295,7 @@ void LobbyRenderer::drawHeader(
             ? Green : Red;
     text(
         frame, status,
-        {layout.playButton.x - 126, 53},
+        {layout.historyButton.x - 130, 53},
         0.38, statusColor, 1);
 }
 
@@ -588,12 +592,15 @@ void LobbyRenderer::drawPlaceholder(
             0.55, Muted, 1);
         text(
             frame,
-            "You are " + view.roomReady->assignedColor,
+            "You are " + view.roomReady->assignedColor + "  (" +
+                std::to_string(view.authenticatedUserRating) + ")",
             {center.x + 60, center.y + 150},
             0.68, Ink, 1);
         text(
             frame,
-            "Opponent: " + view.roomReady->opponentUsername,
+            "Opponent: " + withRating(
+                view.roomReady->opponentUsername,
+                view.roomReady->opponentRating),
             {center.x + 60, center.y + 195},
             0.62, Ink, 1);
         text(
@@ -601,6 +608,34 @@ void LobbyRenderer::drawPlaceholder(
             "Game Server allocation is a later stage.",
             {center.x + 60, center.y + 275},
             0.5, Primary, 1);
+    } else if (view.screen == LobbyScreen::MatchHistory) {
+        text(frame, "MATCH HISTORY", {center.x + 60, center.y + 68},
+             0.9, Ink, 2);
+        if (!view.matchHistoryError.empty()) {
+            text(
+                frame, view.matchHistoryError,
+                {center.x + 60, center.y + 110}, 0.5, Red, 1);
+        } else if (view.matchHistory.empty()) {
+            text(
+                frame, "No games played yet.",
+                {center.x + 60, center.y + 110}, 0.52, Muted, 1);
+        } else {
+            int rowY = center.y + 108;
+            const std::size_t maxRows = std::min<std::size_t>(
+                view.matchHistory.size(), 8);
+            for (std::size_t index = 0; index < maxRows; ++index) {
+                const auto& entry = view.matchHistory[index];
+                const bool won = entry.result == "win";
+                text(
+                    frame,
+                    (won ? "WIN  vs " : "LOSS vs ") + entry.opponent +
+                        "  " + std::to_string(entry.ratingBefore) +
+                        " -> " + std::to_string(entry.ratingAfter),
+                    {center.x + 60, rowY},
+                    0.52, won ? Green : Red, 1);
+                rowY += 34;
+            }
+        }
     } else {
         const bool hidden =
             view.screen == LobbyScreen::HiddenRoomWaiting;

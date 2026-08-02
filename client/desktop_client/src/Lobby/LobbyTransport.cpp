@@ -22,6 +22,10 @@ ctd::network::AuthResult LobbyTransport::logout() {
     return client_.logout();
 }
 
+ctd::network::MatchHistoryResult LobbyTransport::getMatchHistory() {
+    return client_.getMatchHistory();
+}
+
 bool LobbyTransport::connectRealtime() {
     return client_.connectRealtime();
 }

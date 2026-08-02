@@ -55,6 +55,8 @@ struct MatchReadyEvent {
     unsigned long long revision = 0;
     GameStateSnapshot state;
     std::string gameStartsAt;
+    int whiteRating = 1200;
+    int blackRating = 1200;
 };
 struct MatchCountdownEvent {
     std::string roomId;
@@ -100,6 +102,9 @@ struct ProtocolErrorEvent {
 struct SearchingEvent {};
 struct MatchNotFoundEvent {};
 struct FindMatchCancelledEvent {};
+struct RatingUpdatedEvent {
+    int rating = 1200;
+};
 
 using LobbyEvent = std::variant<
     ConnectedEvent,
@@ -121,7 +126,8 @@ using LobbyEvent = std::variant<
     ProtocolErrorEvent,
     SearchingEvent,
     MatchNotFoundEvent,
-    FindMatchCancelledEvent>;
+    FindMatchCancelledEvent,
+    RatingUpdatedEvent>;
 
 struct ProtocolParseResult {
     std::optional<LobbyEvent> event;

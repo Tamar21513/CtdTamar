@@ -251,6 +251,44 @@ AuthResult ApiClient::me() {
     return result;
 }
 
+MatchHistoryResult ApiClient::getMatchHistory() {
+    const auto response = send(HttpMethod::Get, "/matches/history");
+    MatchHistoryResult result;
+    if (!response.transportError.empty()) {
+        result.message = response.transportError;
+        return result;
+    }
+    if (response.statusCode == 401) {
+        cookieJar_.clear();
+        result.message = "Not authenticated";
+        return result;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+        result.message = "Failed to load match history";
+        return result;
+    }
+    try {
+        const auto value = json::parse(response.body);
+        for (const auto& item : value.as_array()) {
+            const auto& object = item.as_object();
+            result.entries.push_back(MatchHistoryEntry{
+                jsonString(object, "opponent"),
+                jsonString(object, "color"),
+                jsonString(object, "result"),
+                static_cast<int>(
+                    object.at("rating_before").as_int64()),
+                static_cast<int>(
+                    object.at("rating_after").as_int64()),
+                jsonString(object, "reason"),
+                jsonString(object, "ended_at")});
+        }
+        result.succeeded = true;
+    } catch (const std::exception&) {
+        result.message = "Malformed match history response";
+    }
+    return result;
+}
+
 AuthResult ApiClient::logout() {
     const auto response = send(HttpMethod::Post, "/auth/logout");
     cookieJar_.clear();

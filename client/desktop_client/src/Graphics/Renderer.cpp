@@ -55,7 +55,9 @@ void Renderer::render(
     const std::string& statusLine2,
     RenderOverlayMode overlayMode,
     bool showSpectatorBackButton,
-    const std::string& countdownValue
+    const std::string& countdownValue,
+    int whiteRating,
+    int blackRating
 ) {
     const cv::Mat board = loadBoardImage();
     if (board.empty()) {
@@ -77,7 +79,9 @@ void Renderer::render(
             whiteUsername,
             blackUsername,
             whiteScore,
-            blackScore
+            blackScore,
+            whiteRating,
+            blackRating
         );
 
     drawScore(

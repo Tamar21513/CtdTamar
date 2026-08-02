@@ -61,6 +61,8 @@ public:
         AuthResultKind::Success, 200, testUser()};
     AuthResult logoutResult{
         AuthResultKind::Success, 204};
+    MatchHistoryResult matchHistoryResult{true, {}, ""};
+    int matchHistoryCalls = 0;
     WebSocketConnectionState state =
         WebSocketConnectionState::Connected;
     std::deque<LobbyClientEvent> events;
@@ -103,6 +105,10 @@ public:
     AuthResult logout() override {
         ++logoutCalls;
         return logoutResult;
+    }
+    MatchHistoryResult getMatchHistory() override {
+        ++matchHistoryCalls;
+        return matchHistoryResult;
     }
     bool connectRealtime() override { return true; }
     void disconnectRealtime() override {}
@@ -462,6 +468,31 @@ TEST_CASE("Room name input supports typing backspace and validation") {
           "Room name must be at most 40 UTF-8 bytes.");
 }
 
+TEST_CASE("OpenMatchHistory loads entries and BackToLobby returns") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    makeLobbyReady(state, transport, controller);
+    transport.matchHistoryResult = MatchHistoryResult{
+        true,
+        {MatchHistoryEntry{
+            "bob", "white", "win", 1200, 1216, "king_capture",
+            "2026-08-02T12:00:00Z"}},
+        ""};
+
+    controller.handle({LobbyActionType::OpenMatchHistory, {}});
+
+    CHECK(transport.matchHistoryCalls == 1);
+    CHECK(state.view().screen == LobbyScreen::MatchHistory);
+    REQUIRE(state.view().matchHistory.size() == 1);
+    CHECK(state.view().matchHistory[0].opponent == "bob");
+    CHECK(state.view().matchHistory[0].result == "win");
+    CHECK(state.view().matchHistoryError.empty());
+
+    controller.handle({LobbyActionType::BackToLobby, {}});
+    CHECK(state.view().screen == LobbyScreen::Lobby);
+}
+
 TEST_CASE("Room creation keeps errors and clears name only on success") {
     LobbyApplicationState state;
     FakeLobbyTransport transport;
@@ -554,12 +585,13 @@ TEST_CASE("Structured errors disconnect and logout clear state") {
 TEST_CASE("Game and spectator events open honest placeholders") {
     LobbyApplicationState state;
     state.applyEvent(LobbyEvent{GameStartedEvent{
-        "room-1", "Named Match", "white", {"2", "bob"}}});
+        "room-1", "Named Match", "white", {"2", "bob", 1450}}});
     CHECK(state.view().screen == LobbyScreen::RoomReady);
     REQUIRE(state.view().roomReady.has_value());
     CHECK(state.view().roomReady->assignedColor == "white");
     CHECK(state.view().roomReady->roomName == "Named Match");
     CHECK(state.view().roomReady->opponentUsername == "bob");
+    CHECK(state.view().roomReady->opponentRating == 1450);
 
     state.applyEvent(LobbyEvent{WatchingGameEvent{
         "room-1",
@@ -720,6 +752,22 @@ TEST_CASE("match ready opens authoritative board and stores color") {
     CHECK(state.view().match->countdownValue == "GO");
 }
 
+TEST_CASE("match ready stores both players' ratings") {
+    LobbyApplicationState state;
+    state.applyEvent(MatchReadyEvent{
+        "room-1", "white", "bob", 1, matchSnapshot(),
+        "2026-07-30T12:00:00Z", 1350, 1180});
+    REQUIRE(state.view().match.has_value());
+    CHECK(state.view().match->whiteRating == 1350);
+    CHECK(state.view().match->blackRating == 1180);
+}
+
+TEST_CASE("rating_updated event refreshes the displayed rating") {
+    LobbyApplicationState state;
+    state.applyEvent(LobbyEvent{RatingUpdatedEvent{1234}});
+    CHECK(state.view().authenticatedUserRating == 1234);
+}
+
 TEST_CASE("countdown blocks all player board input") {
     LobbyApplicationState state;
     FakeLobbyTransport transport;
@@ -848,6 +896,11 @@ TEST_CASE("gameplay presentation has no captions") {
         58 * 8,
         58 * 8);
     CHECK((button & playableBoard).area() == 0);
+
+    player.screen = LobbyScreen::Game;
+    player.match->snapshot.gameOver = true;
+    const auto finishedPresentation = gameplayPresentation(player);
+    CHECK(finishedPresentation.showSpectatorBackButton);
 }
 
 TEST_CASE("jump animation transitions through short rest to idle") {

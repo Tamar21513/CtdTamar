@@ -7,15 +7,17 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 from uuid import UUID
 
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.models import User
+from app.db.models import MatchHistory, User
 from app.matches.allocator import (
+    GameServerShard,
     MatchUnavailableError,
-    SingleMatchAllocator,
+    ShardLauncherClient,
+    ShardPoolAllocator,
 )
 from app.matches.bridge import GameServerBridge
 from app.matches.rating import update_ratings
@@ -28,7 +30,8 @@ from app.matches.schemas import (
     match_state_message,
     move_result_message,
 )
-from app.rooms.models import GameRoom
+from app.rooms.models import ConnectedUser, GameRoom
+from app.websocket.schemas import rating_updated_message
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +59,7 @@ class ActiveMatch:
     snapshot: dict[str, Any]
     game_starts_at: float
     game_starts_at_iso: str
+    shard: GameServerShard
     countdown_task: asyncio.Task | None = None
     sequence_owners: dict[tuple[str, int], WebSocket] = field(
         default_factory=dict
@@ -72,13 +76,22 @@ class MatchManager:
             Callable[[UUID], Awaitable[None]] | None
         ) = None,
         session_factory: sessionmaker[Session] | None = None,
+        additional_shards: list[tuple[str, int]] | None = None,
+        shard_launcher: "ShardLauncherClient | None" = None,
+        max_dynamic_shards: int = 50,
     ) -> None:
-        self._host = host
-        self._port = port
         self._bridge_factory = bridge_factory
         self._match_ended_handler = match_ended_handler
         self._session_factory = session_factory
-        self._allocator = SingleMatchAllocator()
+        shards = [GameServerShard(host, port)] + [
+            GameServerShard(shard_host, shard_port)
+            for shard_host, shard_port in (additional_shards or [])
+        ]
+        self._allocator = ShardPoolAllocator(
+            shards,
+            launcher=shard_launcher,
+            max_dynamic_shards=max_dynamic_shards,
+        )
         self._matches: dict[UUID, ActiveMatch] = {}
         self._lock = asyncio.Lock()
 
@@ -99,7 +112,7 @@ class MatchManager:
                 "room_not_ready", "The room needs two players."
             )
         try:
-            await self._allocator.acquire()
+            shard = await self._allocator.acquire()
         except MatchUnavailableError as error:
             logger.warning(
                 "match_reject room_id=%s code=match_unavailable",
@@ -110,7 +123,7 @@ class MatchManager:
                 "The game server is already hosting a match.",
             ) from error
 
-        bridge = self._bridge_factory(self._host, self._port)
+        bridge = self._bridge_factory(shard.host, shard.port)
 
         async def handle(color: str, message: dict[str, Any]) -> None:
             await self._handle_bridge_event(room.room_id, color, message)
@@ -127,7 +140,7 @@ class MatchManager:
             ).isoformat().replace("+00:00", "Z")
             match = ActiveMatch(
                 room, bridge, 1, snapshot, game_starts_at,
-                game_starts_at_iso,
+                game_starts_at_iso, shard,
             )
             async with self._lock:
                 self._matches[room.room_id] = match
@@ -140,6 +153,8 @@ class MatchManager:
                     1,
                     snapshot,
                     game_starts_at_iso,
+                    room.white.rating,
+                    room.black.rating,
                 ),
             )
             await self._send(
@@ -151,6 +166,8 @@ class MatchManager:
                     1,
                     snapshot,
                     game_starts_at_iso,
+                    room.white.rating,
+                    room.black.rating,
                 ),
             )
             match.countdown_task = asyncio.create_task(
@@ -168,7 +185,7 @@ class MatchManager:
                 room.room_id,
             )
             await bridge.close()
-            await self._allocator.release()
+            await self._allocator.release(shard)
             raise MatchOperationError(
                 "game_server_unavailable",
                 "The authoritative game server is unavailable.",
@@ -189,7 +206,8 @@ class MatchManager:
             if time.time() < match.game_starts_at:
                 message = match_ready_message(
                     room_id, "spectator", "", match.revision,
-                    match.snapshot, match.game_starts_at_iso
+                    match.snapshot, match.game_starts_at_iso,
+                    match.room.white.rating, match.room.black.rating,
                 )
             else:
                 message = match_snapshot_message(
@@ -468,7 +486,7 @@ class MatchManager:
         if self._match_ended_handler is not None:
             await self._match_ended_handler(room_id)
         await match.bridge.close()
-        await self._allocator.release()
+        await self._allocator.release(match.shard)
 
     @staticmethod
     def _winner_color(snapshot: dict[str, Any]) -> str | None:
@@ -514,22 +532,45 @@ class MatchManager:
         black = match.room.black
         if white is None or black is None:
             return
-        winner_username, loser_username = (
-            (white.username, black.username)
-            if winner_color == "white"
-            else (black.username, white.username)
+        winner_conn, loser_conn = (
+            (white, black) if winner_color == "white" else (black, white)
         )
-        await asyncio.to_thread(
+        winner_username, loser_username = (
+            winner_conn.username, loser_conn.username
+        )
+        result = await asyncio.to_thread(
             self._persist_rating_update,
             winner_username,
             loser_username,
+            winner_color,
+            "king_capture",
+            match.room.room_id,
         )
+        if result is not None:
+            new_winner_rating, new_loser_rating = result
+            await self._send_rating_update(winner_conn, new_winner_rating)
+            await self._send_rating_update(loser_conn, new_loser_rating)
+
+    async def _send_rating_update(
+        self,
+        connected_user: ConnectedUser,
+        rating: int,
+    ) -> None:
+        try:
+            await connected_user.websocket.send_json(
+                rating_updated_message(rating)
+            )
+        except (WebSocketDisconnect, RuntimeError):
+            pass
 
     def _persist_rating_update(
         self,
         winner_username: str,
         loser_username: str,
-    ) -> None:
+        winner_color: str,
+        reason: str,
+        room_id: UUID,
+    ) -> tuple[int, int] | None:
         assert self._session_factory is not None
         try:
             with self._session_factory() as session:
@@ -550,12 +591,44 @@ class MatchManager:
                         winner_username,
                         loser_username,
                     )
-                    return
+                    return None
+                winner_rating_before = winner.rating
+                loser_rating_before = loser.rating
                 new_winner_rating, new_loser_rating = update_ratings(
-                    winner.rating, loser.rating
+                    winner_rating_before, loser_rating_before
                 )
                 winner.rating = new_winner_rating
                 loser.rating = new_loser_rating
+                white, black = (
+                    (winner, loser)
+                    if winner_color == "white"
+                    else (loser, winner)
+                )
+                white_rating_before, black_rating_before = (
+                    (winner_rating_before, loser_rating_before)
+                    if winner_color == "white"
+                    else (loser_rating_before, winner_rating_before)
+                )
+                white_rating_after, black_rating_after = (
+                    (new_winner_rating, new_loser_rating)
+                    if winner_color == "white"
+                    else (new_loser_rating, new_winner_rating)
+                )
+                session.add(
+                    MatchHistory(
+                        room_id=room_id,
+                        white_user_id=white.id,
+                        black_user_id=black.id,
+                        white_username=white.username,
+                        black_username=black.username,
+                        winner_color=winner_color,
+                        white_rating_before=white_rating_before,
+                        white_rating_after=white_rating_after,
+                        black_rating_before=black_rating_before,
+                        black_rating_after=black_rating_after,
+                        reason=reason,
+                    )
+                )
                 session.commit()
                 logger.info(
                     "rating_update winner=%s winner_rating=%s "
@@ -565,12 +638,14 @@ class MatchManager:
                     loser_username,
                     new_loser_rating,
                 )
+                return new_winner_rating, new_loser_rating
         except SQLAlchemyError:
             logger.error(
                 "rating_update_failed winner=%s loser=%s",
                 winner_username,
                 loser_username,
             )
+            return None
 
     async def cleanup_room(
         self,
@@ -613,7 +688,7 @@ class MatchManager:
                     match, disconnected_user_id
                 )
             await match.bridge.close()
-            await self._allocator.release()
+            await self._allocator.release(match.shard)
 
     async def _apply_disconnect_rating_update(
         self,
@@ -627,13 +702,9 @@ class MatchManager:
         if white is None or black is None:
             return
         if white.user_id == disconnected_user_id:
-            loser_username, winner_username = (
-                white.username, black.username
-            )
+            loser_conn, winner_conn = white, black
         elif black.user_id == disconnected_user_id:
-            loser_username, winner_username = (
-                black.username, white.username
-            )
+            loser_conn, winner_conn = black, white
         else:
             logger.warning(
                 "rating_update_skipped room_id=%s "
@@ -641,11 +712,22 @@ class MatchManager:
                 match.room.room_id,
             )
             return
+        winner_username, loser_username = (
+            winner_conn.username, loser_conn.username
+        )
+        winner_color = "white" if winner_conn is white else "black"
         # Reuses the exact same ELO persistence used for a
         # king-capture win/loss (_apply_rating_update above) -
         # only the winner/loser attribution differs.
-        await asyncio.to_thread(
+        result = await asyncio.to_thread(
             self._persist_rating_update,
             winner_username,
             loser_username,
+            winner_color,
+            "disconnect",
+            match.room.room_id,
         )
+        if result is not None:
+            new_winner_rating, new_loser_rating = result
+            await self._send_rating_update(winner_conn, new_winner_rating)
+            await self._send_rating_update(loser_conn, new_loser_rating)

@@ -2,6 +2,7 @@
 #include "ThirdParty/doctest.h"
 
 #include "Network/ApiClient.hpp"
+#include "Network/ClientTransportConfig.hpp"
 #include "Network/LobbyProtocol.hpp"
 #include "Network/LobbyClient.hpp"
 #include "Network/SessionCookieJar.hpp"
@@ -104,6 +105,24 @@ TEST_CASE("SessionCookieJar ignores malformed Set-Cookie") {
     CHECK_FALSE(jar.hasSession());
 }
 
+TEST_CASE("rating_updated message parses into RatingUpdatedEvent") {
+    auto update = LobbyProtocol::parse(
+        R"({"type":"rating_updated","rating":1234})");
+    INFO(update.error);
+    REQUIRE(update.event.has_value());
+    REQUIRE(std::holds_alternative<RatingUpdatedEvent>(*update.event));
+    CHECK(std::get<RatingUpdatedEvent>(*update.event).rating == 1234);
+}
+
+TEST_CASE("makeTransportConfig builds http and ws URLs from host and port") {
+    const auto config =
+        ctd::network::makeTransportConfig("192.168.1.50", 8000);
+    CHECK(config.apiBaseUrl == "http://192.168.1.50:8000");
+    CHECK(config.websocketUrl == "ws://192.168.1.50:8000/ws");
+    const auto defaulted = ctd::network::ClientTransportConfig{};
+    CHECK(defaulted.apiBaseUrl == "http://127.0.0.1:8000");
+}
+
 TEST_CASE("ApiClient parses registration login me and logout") {
     auto transport = std::make_shared<FakeHttpTransport>();
     transport->responses.push_back(userResponse(201));
@@ -178,6 +197,42 @@ TEST_CASE("ApiClient clears cookie after unauthorized me") {
     REQUIRE(api.login("alice", "SecretPassword!").succeeded());
     CHECK(api.me().kind == AuthResultKind::Unauthorized);
     CHECK_FALSE(jar.hasSession());
+}
+
+TEST_CASE("ApiClient parses match history entries") {
+    auto transport = std::make_shared<FakeHttpTransport>();
+    transport->responses.push_back({
+        200,
+        R"([{"opponent":"bob","color":"white","result":"win",)"
+        R"("rating_before":1200,"rating_after":1216,)"
+        R"("reason":"king_capture",)"
+        R"("ended_at":"2026-08-02T12:00:00Z"},)"
+        R"({"opponent":"carol","color":"black","result":"loss",)"
+        R"("rating_before":1216,"rating_after":1184,)"
+        R"("reason":"disconnect",)"
+        R"("ended_at":"2026-08-01T09:00:00Z"}])"});
+    SessionCookieJar jar;
+    ApiClient api({}, jar, transport);
+
+    const auto result = api.getMatchHistory();
+
+    CHECK(result.succeeded);
+    REQUIRE(result.entries.size() == 2);
+    CHECK(result.entries[0].opponent == "bob");
+    CHECK(result.entries[0].color == "white");
+    CHECK(result.entries[0].result == "win");
+    CHECK(result.entries[0].ratingBefore == 1200);
+    CHECK(result.entries[0].ratingAfter == 1216);
+    CHECK(result.entries[0].reason == "king_capture");
+    CHECK(result.entries[0].endedAt == "2026-08-02T12:00:00Z");
+    CHECK(result.entries[1].opponent == "carol");
+    CHECK(result.entries[1].result == "loss");
+    CHECK(result.entries[1].reason == "disconnect");
+
+    REQUIRE(transport->requests.size() == 1);
+    CHECK(
+        transport->requests.front().url.find("/matches/history") !=
+        std::string::npos);
 }
 
 TEST_CASE("LobbyProtocol serializes every outgoing operation") {
@@ -339,6 +394,7 @@ TEST_CASE("authoritative snapshots and results parse") {
         R"({"type":"match_ready","room_id":"room-1",)"
         R"("color":"white","opponent":"bob","revision":1,)"
         R"("game_starts_at":"2026-07-30T12:00:00Z",)"
+        R"("white_rating":1350,"black_rating":1180,)"
         "\"state\":" + state + "}");
     INFO(ready.error);
     REQUIRE(ready.event.has_value());
@@ -348,6 +404,8 @@ TEST_CASE("authoritative snapshots and results parse") {
     CHECK(event.revision == 1);
     CHECK(event.state.pieces.size() == 1);
     CHECK(event.gameStartsAt == "2026-07-30T12:00:00Z");
+    CHECK(event.whiteRating == 1350);
+    CHECK(event.blackRating == 1180);
 
     auto countdown = LobbyProtocol::parse(
         R"({"type":"match_countdown","room_id":"room-1",)"

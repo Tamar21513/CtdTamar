@@ -14,6 +14,7 @@ enum class LobbyActionType {
     Register,
     OpenCreateRoom,
     OpenJoinHidden,
+    OpenMatchHistory,
     SelectPublicVisibility,
     SelectHiddenVisibility,
     SubmitCreateRoom,

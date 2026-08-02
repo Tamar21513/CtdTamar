@@ -199,6 +199,15 @@ void LobbyController::handle(const LobbyAction& action) {
                 view.hiddenRoomCodeInput.clear();
             }
             break;
+        case LobbyActionType::OpenMatchHistory:
+            if (view.networkActionsEnabled()) {
+                const auto result = transport_.getMatchHistory();
+                view.matchHistory = result.entries;
+                view.matchHistoryError =
+                    result.succeeded ? "" : result.message;
+                view.screen = LobbyScreen::MatchHistory;
+            }
+            break;
         case LobbyActionType::SelectPublicVisibility:
             view.selectedRoomVisibility =
                 RoomVisibilitySelection::Public;

@@ -18,6 +18,7 @@ public:
         const std::string& username,
         const std::string& password) = 0;
     virtual ctd::network::AuthResult logout() = 0;
+    virtual ctd::network::MatchHistoryResult getMatchHistory() = 0;
     virtual bool connectRealtime() = 0;
     virtual void disconnectRealtime() = 0;
     virtual ctd::network::WebSocketConnectionState connectionState()
@@ -60,6 +61,7 @@ public:
         const std::string& username,
         const std::string& password) override;
     ctd::network::AuthResult logout() override;
+    ctd::network::MatchHistoryResult getMatchHistory() override;
     bool connectRealtime() override;
     void disconnectRealtime() override;
     ctd::network::WebSocketConnectionState connectionState()
