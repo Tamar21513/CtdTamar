@@ -96,6 +96,9 @@ struct AuthoritativeMatchView {
     std::string countdownValue;
     int whiteRating = 1200;
     int blackRating = 1200;
+    int opponentReconnectSecondsRemaining = 0;
+    std::string reconnectStatusMessage;
+    std::string reconnectStatusLine2;
 };
 
 struct LobbyViewModel {

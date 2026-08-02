@@ -60,6 +60,14 @@ def match_cancelled_message(room_id: UUID) -> dict[str, str]:
     }
 
 
+def match_forfeited_message(room_id: UUID) -> dict[str, str]:
+    return {
+        "type": "match_forfeited",
+        "room_id": str(room_id),
+        "reason": "opponent_did_not_reconnect",
+    }
+
+
 def match_snapshot_message(
     room_id: UUID,
     revision: int,

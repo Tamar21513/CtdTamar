@@ -494,6 +494,41 @@ void LobbyController::consumeNetworkEvents() {
                 state_.showError(
                     "Could not subscribe to lobby updates.");
             }
+            if (
+                std::holds_alternative<
+                    ctd::network::OpponentReconnectingEvent>(
+                    *envelope->protocolEvent)) {
+                disconnectCountdownActive_ = true;
+                resumeCountdownActive_ = false;
+                disconnectCountdownStart_ =
+                    std::chrono::steady_clock::now();
+                disconnectCountdownInitialSeconds_ =
+                    std::get<ctd::network::OpponentReconnectingEvent>(
+                        *envelope->protocolEvent)
+                        .secondsRemaining;
+            } else if (
+                std::holds_alternative<
+                    ctd::network::OpponentReconnectedEvent>(
+                    *envelope->protocolEvent)) {
+                disconnectCountdownActive_ = false;
+                resumeCountdownActive_ = true;
+                resumeCountdownStart_ =
+                    std::chrono::steady_clock::now();
+                resumeMessageText_ =
+                    (state_.view().match
+                         ? state_.view().match->opponentUsername
+                         : "Opponent") +
+                    " connected";
+            } else if (
+                std::holds_alternative<
+                    ctd::network::MatchResumedEvent>(
+                    *envelope->protocolEvent)) {
+                disconnectCountdownActive_ = false;
+                resumeCountdownActive_ = true;
+                resumeCountdownStart_ =
+                    std::chrono::steady_clock::now();
+                resumeMessageText_ = "Reconnected";
+            }
         } else if (!envelope->parseError.empty()) {
             state_.showError("The lobby sent an invalid message.");
         }
@@ -510,6 +545,51 @@ void LobbyController::tick() {
     }
     state_.setConnectionState(transport_.connectionState());
     consumeNetworkEvents();
+    updateLocalCountdowns();
+}
+
+void LobbyController::updateLocalCountdowns() {
+    auto& view = state_.editableForInput();
+    if (!view.match) {
+        disconnectCountdownActive_ = false;
+        resumeCountdownActive_ = false;
+        return;
+    }
+    if (resumeCountdownActive_) {
+        const auto elapsedSeconds = std::chrono::duration_cast<
+            std::chrono::seconds>(
+            std::chrono::steady_clock::now() -
+            resumeCountdownStart_).count();
+        if (elapsedSeconds >= 2) {
+            resumeCountdownActive_ = false;
+            view.match->reconnectStatusMessage.clear();
+        } else {
+            view.match->reconnectStatusMessage = resumeMessageText_;
+        }
+        view.match->reconnectStatusLine2.clear();
+        view.match->countdownValue.clear();
+        return;
+    }
+    if (disconnectCountdownActive_) {
+        const auto elapsedSeconds = std::chrono::duration_cast<
+            std::chrono::seconds>(
+            std::chrono::steady_clock::now() -
+            disconnectCountdownStart_).count();
+        const int remaining = disconnectCountdownInitialSeconds_ -
+            static_cast<int>(elapsedSeconds);
+        view.match->countdownValue.clear();
+        if (remaining <= 0) {
+            disconnectCountdownActive_ = false;
+            view.match->reconnectStatusMessage.clear();
+            view.match->reconnectStatusLine2.clear();
+        } else {
+            view.match->reconnectStatusMessage =
+                view.match->opponentUsername + " disconnected";
+            view.match->reconnectStatusLine2 =
+                "waiting to reconnect... (" +
+                std::to_string(remaining) + "s)";
+        }
+    }
 }
 
 bool LobbyController::hasAuthenticationTask() const {

@@ -327,8 +327,32 @@ ProtocolParseResult LobbyProtocol::parse(
                 parseSnapshot(requiredObject(object, "state")),
                 requiredUtcTimestamp(object, "game_starts_at")}}, {}};
         }
+        if (type == "opponent_reconnecting") {
+            return {LobbyEvent{OpponentReconnectingEvent{
+                requiredString(object, "room_id"),
+                optionalInteger(object, "seconds_remaining")}}, {}};
+        }
+        if (type == "opponent_reconnected") {
+            return {LobbyEvent{OpponentReconnectedEvent{
+                requiredString(object, "room_id")}}, {}};
+        }
+        if (type == "match_resumed") {
+            return {LobbyEvent{MatchResumedEvent{
+                requiredString(object, "room_id"),
+                requiredString(object, "color"),
+                requiredString(object, "opponent"),
+                requiredUnsigned(object, "revision"),
+                parseSnapshot(requiredObject(object, "state")),
+                optionalInteger(object, "white_rating", 1200),
+                optionalInteger(object, "black_rating", 1200)}}, {}};
+        }
         if (type == "match_cancelled") {
             return {LobbyEvent{MatchCancelledEvent{
+                requiredString(object, "room_id"),
+                requiredString(object, "reason")}}, {}};
+        }
+        if (type == "match_forfeited") {
+            return {LobbyEvent{MatchForfeitedEvent{
                 requiredString(object, "room_id"),
                 requiredString(object, "reason")}}, {}};
         }

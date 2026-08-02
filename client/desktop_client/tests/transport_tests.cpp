@@ -114,6 +114,74 @@ TEST_CASE("rating_updated message parses into RatingUpdatedEvent") {
     CHECK(std::get<RatingUpdatedEvent>(*update.event).rating == 1234);
 }
 
+TEST_CASE("opponent_reconnecting message parses into event") {
+    auto update = LobbyProtocol::parse(
+        R"({"type":"opponent_reconnecting","room_id":"room-1",)"
+        R"("seconds_remaining":17})");
+    INFO(update.error);
+    REQUIRE(update.event.has_value());
+    REQUIRE(
+        std::holds_alternative<OpponentReconnectingEvent>(*update.event));
+    const auto& event =
+        std::get<OpponentReconnectingEvent>(*update.event);
+    CHECK(event.roomId == "room-1");
+    CHECK(event.secondsRemaining == 17);
+}
+
+TEST_CASE("opponent_reconnected message parses into event") {
+    auto update = LobbyProtocol::parse(
+        R"({"type":"opponent_reconnected","room_id":"room-1"})");
+    INFO(update.error);
+    REQUIRE(update.event.has_value());
+    REQUIRE(
+        std::holds_alternative<OpponentReconnectedEvent>(*update.event));
+    CHECK(
+        std::get<OpponentReconnectedEvent>(*update.event).roomId ==
+        "room-1");
+}
+
+TEST_CASE("match_resumed message parses into event") {
+    const std::string state =
+        R"({"serverTimeMs":1,"gameOver":false,"whiteScore":0,)"
+        R"("blackScore":0,"whiteUsername":"alice",)"
+        R"("blackUsername":"bob","playersReady":true,)"
+        R"("gameplayStartsAtEpochMs":10,)"
+        R"("pieces":[{"id":1,"token":"wP",)"
+        R"("position":{"row":6,"col":4},"state":"idle",)"
+        R"("hasMoved":false,"remainingCooldownMs":0,)"
+        R"("totalCooldownMs":0}],"motions":[],"jumps":[],)"
+        R"("whiteMoveHistory":[],"blackMoveHistory":[]})";
+    auto resumed = LobbyProtocol::parse(
+        R"({"type":"match_resumed","room_id":"room-1",)"
+        R"("color":"black","opponent":"alice","revision":4,)"
+        R"("white_rating":1210,"black_rating":1190,)"
+        "\"state\":" + state + "}");
+    INFO(resumed.error);
+    REQUIRE(resumed.event.has_value());
+    REQUIRE(std::holds_alternative<MatchResumedEvent>(*resumed.event));
+    const auto& event = std::get<MatchResumedEvent>(*resumed.event);
+    CHECK(event.roomId == "room-1");
+    CHECK(event.color == "black");
+    CHECK(event.opponent == "alice");
+    CHECK(event.revision == 4);
+    CHECK(event.whiteRating == 1210);
+    CHECK(event.blackRating == 1190);
+    CHECK(event.state.pieces.size() == 1);
+}
+
+TEST_CASE("match_forfeited message parses into event") {
+    auto forfeited = LobbyProtocol::parse(
+        R"({"type":"match_forfeited","room_id":"room-1",)"
+        R"("reason":"opponent_did_not_reconnect"})");
+    INFO(forfeited.error);
+    REQUIRE(forfeited.event.has_value());
+    REQUIRE(
+        std::holds_alternative<MatchForfeitedEvent>(*forfeited.event));
+    const auto& event = std::get<MatchForfeitedEvent>(*forfeited.event);
+    CHECK(event.roomId == "room-1");
+    CHECK(event.reason == "opponent_did_not_reconnect");
+}
+
 TEST_CASE("makeTransportConfig builds http and ws URLs from host and port") {
     const auto config =
         ctd::network::makeTransportConfig("192.168.1.50", 8000);

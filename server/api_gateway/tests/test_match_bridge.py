@@ -1103,6 +1103,10 @@ async def _grace_period_expiry_outcome(client) -> None:
         assert len(rows) == 1
         assert rows[0].reason == "disconnect"
         assert rows[0].winner_color == "white"
+    assert any(
+        message.get("type") == "match_forfeited"
+        for message in room.white.websocket.messages
+    )
 
 
 def test_second_disconnect_during_grace_finalizes_with_first_as_loser(

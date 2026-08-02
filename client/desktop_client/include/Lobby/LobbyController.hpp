@@ -4,6 +4,7 @@
 #include "Lobby/LobbyApplicationState.hpp"
 #include "Lobby/LobbyTransport.hpp"
 
+#include <chrono>
 #include <future>
 #include <optional>
 #include <string>
@@ -36,6 +37,7 @@ private:
     void beginAuthentication(bool registration);
     void finishAuthentication(AuthenticationOutcome outcome);
     void consumeNetworkEvents();
+    void updateLocalCountdowns();
     void applyTransportEvent(
         const ctd::network::WebSocketEvent& event);
     bool beginRoomAction(
@@ -53,6 +55,12 @@ private:
     std::string confirmPassword_;
     std::future<AuthenticationOutcome> authenticationTask_;
     bool authenticationTaskActive_ = false;
+    bool disconnectCountdownActive_ = false;
+    std::chrono::steady_clock::time_point disconnectCountdownStart_;
+    int disconnectCountdownInitialSeconds_ = 0;
+    bool resumeCountdownActive_ = false;
+    std::chrono::steady_clock::time_point resumeCountdownStart_;
+    std::string resumeMessageText_;
 };
 
 }  // namespace ctd::lobby

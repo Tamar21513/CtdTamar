@@ -762,6 +762,108 @@ TEST_CASE("match ready stores both players' ratings") {
     CHECK(state.view().match->blackRating == 1180);
 }
 
+TEST_CASE(
+    "opponent_reconnecting shows a readable status message and "
+    "reconnect shows a connected message, with no digit countdown") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    state.applyEvent(MatchReadyEvent{
+        "room-1", "white", "bob", 1, matchSnapshot(),
+        "2026-07-30T12:00:00Z"});
+    state.applyEvent(MatchStartedEvent{
+        "room-1", 1, matchSnapshot(), "2026-07-30T12:00:00Z"});
+    REQUIRE(state.view().match.has_value());
+    CHECK(state.view().match->countdownValue.empty());
+
+    transport.events.push_back({
+        LobbyEvent{OpponentReconnectingEvent{"room-1", 20}},
+        std::nullopt,
+        {}});
+    controller.tick();
+    const std::string disconnectedMessage =
+        state.view().match->reconnectStatusMessage;
+    const std::string disconnectedLine2 =
+        state.view().match->reconnectStatusLine2;
+    CHECK(disconnectedMessage.find("bob") != std::string::npos);
+    CHECK(
+        disconnectedMessage.find("disconnected") != std::string::npos);
+    CHECK(disconnectedMessage.find("waiting") == std::string::npos);
+    CHECK(disconnectedMessage.find("20") == std::string::npos);
+    CHECK(disconnectedLine2.find("waiting") != std::string::npos);
+    CHECK(disconnectedLine2.find("20") != std::string::npos);
+    CHECK(state.view().match->countdownValue.empty());
+
+    transport.events.push_back({
+        LobbyEvent{OpponentReconnectedEvent{"room-1"}},
+        std::nullopt,
+        {}});
+    controller.tick();
+    const std::string reconnectedMessage =
+        state.view().match->reconnectStatusMessage;
+    CHECK(reconnectedMessage.find("bob") != std::string::npos);
+    CHECK(reconnectedMessage.find("connected") != std::string::npos);
+    CHECK(state.view().match->reconnectStatusLine2.empty());
+    CHECK(state.view().match->countdownValue.empty());
+}
+
+TEST_CASE(
+    "match_resumed shows a local Reconnected message with no digit "
+    "countdown") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+
+    transport.events.push_back({
+        LobbyEvent{MatchResumedEvent{
+            "room-1", "black", "alice", 7, matchSnapshot(),
+            1180, 1220}},
+        std::nullopt,
+        {}});
+    controller.tick();
+
+    REQUIRE(state.view().match.has_value());
+    CHECK(state.view().screen == LobbyScreen::Game);
+    CHECK(state.view().match->reconnectStatusMessage == "Reconnected");
+    CHECK(state.view().match->countdownValue.empty());
+}
+
+TEST_CASE(
+    "match_forfeited returns the survivor to the lobby with a win "
+    "message") {
+    LobbyApplicationState state;
+    state.applyEvent(MatchReadyEvent{
+        "room-1", "white", "bob", 1, matchSnapshot(),
+        "2026-07-30T12:00:00Z"});
+    state.applyEvent(MatchStartedEvent{
+        "room-1", 1, matchSnapshot(), "2026-07-30T12:00:00Z"});
+    REQUIRE(state.view().match.has_value());
+
+    state.applyEvent(MatchForfeitedEvent{
+        "room-1", "opponent_did_not_reconnect"});
+
+    CHECK_FALSE(state.view().match.has_value());
+    CHECK(state.view().screen == LobbyScreen::Lobby);
+    CHECK_FALSE(state.view().visibleError.empty());
+    CHECK(state.view().visibleError.find("win") != std::string::npos);
+}
+
+TEST_CASE(
+    "match_resumed lands directly in game without a countdown") {
+    LobbyApplicationState state;
+    state.applyEvent(MatchResumedEvent{
+        "room-1", "black", "alice", 7, matchSnapshot(), 1180, 1220});
+
+    CHECK(state.view().screen == LobbyScreen::Game);
+    REQUIRE(state.view().match.has_value());
+    CHECK(state.view().match->phase == MatchPhase::Playing);
+    CHECK(state.view().match->assignedColor == "black");
+    CHECK(state.view().match->opponentUsername == "alice");
+    CHECK(state.view().match->whiteRating == 1180);
+    CHECK(state.view().match->blackRating == 1220);
+    CHECK(state.view().match->countdownValue.empty());
+}
+
 TEST_CASE("rating_updated event refreshes the displayed rating") {
     LobbyApplicationState state;
     state.applyEvent(LobbyEvent{RatingUpdatedEvent{1234}});

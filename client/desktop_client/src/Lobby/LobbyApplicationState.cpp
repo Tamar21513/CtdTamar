@@ -13,7 +13,13 @@ GameplayPresentation gameplayPresentation(
         view.screen == LobbyScreen::SpectatorGame ||
         (view.screen == LobbyScreen::Game &&
          view.match && view.match->snapshot.gameOver);
-    return {"", "", showBackButton};
+    std::string statusLine1;
+    std::string statusLine2;
+    if (view.match && !view.match->reconnectStatusMessage.empty()) {
+        statusLine1 = view.match->reconnectStatusMessage;
+        statusLine2 = view.match->reconnectStatusLine2;
+    }
+    return {statusLine1, statusLine2, showBackButton};
 }
 
 bool LobbyViewModel::networkActionsEnabled() const {
@@ -289,6 +295,54 @@ void LobbyApplicationState::applyEvent(
             } else if constexpr (
                 std::is_same_v<Event, ctd::network::RatingUpdatedEvent>) {
                 view_.authenticatedUserRating = value.rating;
+            } else if constexpr (
+                std::is_same_v<
+                    Event, ctd::network::OpponentReconnectingEvent>) {
+                if (view_.match && view_.match->roomId == value.roomId) {
+                    view_.match->opponentReconnectSecondsRemaining =
+                        value.secondsRemaining;
+                }
+            } else if constexpr (
+                std::is_same_v<
+                    Event, ctd::network::OpponentReconnectedEvent>) {
+                if (view_.match && view_.match->roomId == value.roomId) {
+                    view_.match->opponentReconnectSecondsRemaining = 0;
+                }
+            } else if constexpr (
+                std::is_same_v<Event, ctd::network::MatchResumedEvent>) {
+                view_.match = AuthoritativeMatchView{
+                    value.roomId,
+                    value.color,
+                    value.opponent,
+                    value.revision,
+                    1,
+                    value.state,
+                    std::nullopt,
+                    {},
+                    false,
+                    MatchPhase::Playing,
+                    "",
+                    "",
+                    value.whiteRating,
+                    value.blackRating};
+                view_.pendingRoomId = value.roomId;
+                view_.screen = LobbyScreen::Game;
+                view_.roomReady.reset();
+                view_.pendingAction = PendingLobbyAction::None;
+                view_.visibleError.clear();
+            } else if constexpr (
+                std::is_same_v<Event, ctd::network::MatchForfeitedEvent>) {
+                ctd::logging::defaultLogger().warn(
+                    "match forfeited id=" + value.roomId +
+                    " reason=" + value.reason);
+                if (view_.match &&
+                    view_.match->roomId == value.roomId) {
+                    view_.match.reset();
+                    view_.screen = LobbyScreen::Lobby;
+                    view_.visibleError =
+                        "Your opponent did not reconnect in time - "
+                        "you win.";
+                }
             }
         },
         event);

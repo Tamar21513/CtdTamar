@@ -276,10 +276,11 @@ void LobbyApp::run(ctd::network::ClientTransportConfig config) {
                 match.snapshot.blackUsername,
                 presentation.statusLine1,
                 presentation.statusLine2,
-                RenderOverlayMode::None,
+                presentation.statusLine1.empty()
+                    ? RenderOverlayMode::None
+                    : RenderOverlayMode::Waiting,
                 presentation.showSpectatorBackButton,
-                match.phase == MatchPhase::Countdown
-                    ? match.countdownValue : "",
+                match.countdownValue,
                 match.whiteRating,
                 match.blackRating);
         } else {

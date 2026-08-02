@@ -29,6 +29,7 @@ from app.matches.schemas import (
     match_snapshot_message,
     match_state_message,
     match_resumed_message,
+    match_forfeited_message,
     move_result_message,
     opponent_reconnecting_message,
     opponent_reconnected_message,
@@ -766,9 +767,22 @@ class MatchManager:
             ):
                 return
             del self._matches[room_id]
+            white = match.room.white
+            black = match.room.black
+            opponent = (
+                black
+                if white is not None
+                and white.user_id == disconnected_user_id
+                else white
+            )
         await self._apply_disconnect_rating_update(
             match, disconnected_user_id
         )
+        if opponent is not None:
+            await self._send(
+                opponent.websocket,
+                match_forfeited_message(room_id),
+            )
         await match.bridge.close()
         await self._allocator.release(match.shard)
 
