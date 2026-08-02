@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Network/ApiClient.hpp"
 #include "Network/LobbyProtocol.hpp"
 #include "Network/WebSocketClient.hpp"
 
@@ -16,6 +17,7 @@ enum class LobbyScreen {
     WaitingRoom,
     HiddenRoomWaiting,
     RoomReady,
+    MatchHistory,
     SpectatorPlaceholder,
     Game,
     SpectatorGame,
@@ -125,6 +127,8 @@ struct LobbyViewModel {
     std::optional<AuthoritativeMatchView> match;
     int waitingPage = 0;
     int activePage = 0;
+    std::vector<ctd::network::MatchHistoryEntry> matchHistory;
+    std::string matchHistoryError;
 
     bool networkActionsEnabled() const;
 };

@@ -71,6 +71,9 @@ LobbyAction LobbyInputMapper::mapClick(
     }
 
     if (view.screen == LobbyScreen::Lobby) {
+        if (contains(layout.historyButton, point)) {
+            return {LobbyActionType::OpenMatchHistory, {}};
+        }
         if (contains(layout.playButton, point)) {
             return {LobbyActionType::FindMatch, {}};
         }

@@ -61,6 +61,8 @@ public:
         AuthResultKind::Success, 200, testUser()};
     AuthResult logoutResult{
         AuthResultKind::Success, 204};
+    MatchHistoryResult matchHistoryResult{true, {}, ""};
+    int matchHistoryCalls = 0;
     WebSocketConnectionState state =
         WebSocketConnectionState::Connected;
     std::deque<LobbyClientEvent> events;
@@ -103,6 +105,10 @@ public:
     AuthResult logout() override {
         ++logoutCalls;
         return logoutResult;
+    }
+    MatchHistoryResult getMatchHistory() override {
+        ++matchHistoryCalls;
+        return matchHistoryResult;
     }
     bool connectRealtime() override { return true; }
     void disconnectRealtime() override {}
@@ -460,6 +466,31 @@ TEST_CASE("Room name input supports typing backspace and validation") {
     CHECK(transport.createdRoomNames.empty());
     CHECK(state.view().visibleError ==
           "Room name must be at most 40 UTF-8 bytes.");
+}
+
+TEST_CASE("OpenMatchHistory loads entries and BackToLobby returns") {
+    LobbyApplicationState state;
+    FakeLobbyTransport transport;
+    LobbyController controller(state, transport);
+    makeLobbyReady(state, transport, controller);
+    transport.matchHistoryResult = MatchHistoryResult{
+        true,
+        {MatchHistoryEntry{
+            "bob", "white", "win", 1200, 1216, "king_capture",
+            "2026-08-02T12:00:00Z"}},
+        ""};
+
+    controller.handle({LobbyActionType::OpenMatchHistory, {}});
+
+    CHECK(transport.matchHistoryCalls == 1);
+    CHECK(state.view().screen == LobbyScreen::MatchHistory);
+    REQUIRE(state.view().matchHistory.size() == 1);
+    CHECK(state.view().matchHistory[0].opponent == "bob");
+    CHECK(state.view().matchHistory[0].result == "win");
+    CHECK(state.view().matchHistoryError.empty());
+
+    controller.handle({LobbyActionType::BackToLobby, {}});
+    CHECK(state.view().screen == LobbyScreen::Lobby);
 }
 
 TEST_CASE("Room creation keeps errors and clears name only on success") {

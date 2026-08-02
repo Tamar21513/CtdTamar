@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
 from app.config import get_settings
-from app.db.models import User
+from app.db.models import MatchHistory, User
 from app.main import app
 from app.matches.manager import MatchManager
 
@@ -20,23 +20,25 @@ def migrated_database() -> Iterator[None]:
     yield
 
 
+def _clean_database(client: TestClient) -> None:
+    with client.app.state.db_session_factory() as session:
+        # match_history rows reference users.id via a foreign key
+        # with no cascade, so they must be cleared first.
+        session.execute(delete(MatchHistory))
+        session.execute(delete(User))
+        session.commit()
+    redis_client = client.app.state.redis_client
+    for key in redis_client.scan_iter(match="ctd:session:*"):
+        redis_client.delete(key)
+
+
 @pytest.fixture(autouse=True)
 def clean_infrastructure() -> Iterator[None]:
     with TestClient(app) as client:
-        with client.app.state.db_session_factory() as session:
-            session.execute(delete(User))
-            session.commit()
-        redis_client = client.app.state.redis_client
-        for key in redis_client.scan_iter(match="ctd:session:*"):
-            redis_client.delete(key)
+        _clean_database(client)
     yield
     with TestClient(app) as client:
-        with client.app.state.db_session_factory() as session:
-            session.execute(delete(User))
-            session.commit()
-        redis_client = client.app.state.redis_client
-        for key in redis_client.scan_iter(match="ctd:session:*"):
-            redis_client.delete(key)
+        _clean_database(client)
 
 
 @pytest.fixture

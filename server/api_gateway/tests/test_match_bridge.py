@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
-from app.db.models import User
+from app.db.models import MatchHistory, User
 from app.matches.manager import MatchManager, MatchOperationError
 from app.matches.bridge import GameServerBridge
 from app.matches.schemas import match_ready_message
@@ -521,6 +521,73 @@ async def _win_updates_both_players_ratings(client) -> None:
         assert loser.rating == 1184
 
 
+def test_win_by_king_capture_records_match_history(client) -> None:
+    asyncio.run(_win_records_match_history(client))
+
+
+async def _win_records_match_history(client) -> None:
+    FakeBridge.instances.clear()
+    with client.app.state.db_session_factory() as session:
+        session.add_all(
+            [
+                User(
+                    username="HistoryWinner",
+                    username_normalized="historywinner",
+                    password_hash="not-a-real-hash",
+                ),
+                User(
+                    username="HistoryLoser",
+                    username_normalized="historyloser",
+                    password_hash="not-a-real-hash",
+                ),
+            ]
+        )
+        session.commit()
+
+    room = active_room(
+        white_username="HistoryLoser",
+        black_username="HistoryWinner",
+    )
+    manager = MatchManager(
+        "game",
+        54000,
+        FakeBridge,
+        session_factory=client.app.state.db_session_factory,
+    )
+    await manager.start_match(room)
+    bridge = FakeBridge.instances[-1]
+
+    await bridge.handler(
+        "black",
+        {
+            "type": "game_over",
+            "hasSnapshot": True,
+            # Only the black king survives - black (HistoryWinner)
+            # wins.
+            "snapshot": {
+                **INITIAL_STATE,
+                "gameOver": True,
+                "pieces": [{"id": 1, "token": "bK"}],
+            },
+        },
+    )
+    await asyncio.sleep(0.2)
+
+    with client.app.state.db_session_factory() as session:
+        rows = session.scalars(select(MatchHistory)).all()
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.room_id == room.room_id
+        assert row.white_username == "HistoryLoser"
+        assert row.black_username == "HistoryWinner"
+        assert row.winner_color == "black"
+        assert row.white_rating_before == 1200
+        assert row.white_rating_after == 1184
+        assert row.black_rating_before == 1200
+        assert row.black_rating_after == 1216
+        assert row.reason == "king_capture"
+
+
 def test_mid_match_disconnect_updates_ratings(client) -> None:
     asyncio.run(_mid_match_disconnect_updates_ratings(client))
 
@@ -573,6 +640,60 @@ async def _mid_match_disconnect_updates_ratings(client) -> None:
         )
         assert staying.rating == 1216
         assert leaving.rating == 1184
+
+
+def test_mid_match_disconnect_records_match_history(client) -> None:
+    asyncio.run(_mid_match_disconnect_records_match_history(client))
+
+
+async def _mid_match_disconnect_records_match_history(client) -> None:
+    FakeBridge.instances.clear()
+    with client.app.state.db_session_factory() as session:
+        session.add_all(
+            [
+                User(
+                    username="DiscHistoryStaying",
+                    username_normalized="dischistorystaying",
+                    password_hash="not-a-real-hash",
+                ),
+                User(
+                    username="DiscHistoryLeaving",
+                    username_normalized="dischistoryleaving",
+                    password_hash="not-a-real-hash",
+                ),
+            ]
+        )
+        session.commit()
+
+    room = active_room(
+        white_username="DiscHistoryStaying",
+        black_username="DiscHistoryLeaving",
+    )
+    manager = MatchManager(
+        "game",
+        54000,
+        FakeBridge,
+        session_factory=client.app.state.db_session_factory,
+    )
+    await manager.start_match(room)
+    manager._matches[room.room_id].game_starts_at = 0
+
+    await manager.cleanup_room(
+        room.room_id,
+        disconnected_user_id=room.black.user_id,
+    )
+
+    with client.app.state.db_session_factory() as session:
+        rows = session.scalars(select(MatchHistory)).all()
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.room_id == room.room_id
+        assert row.winner_color == "white"
+        assert row.white_rating_before == 1200
+        assert row.white_rating_after == 1216
+        assert row.black_rating_before == 1200
+        assert row.black_rating_after == 1184
+        assert row.reason == "disconnect"
 
 
 def test_disconnect_before_match_start_does_not_change_ratings(
@@ -635,6 +756,54 @@ async def _disconnect_before_match_start_does_not_change_ratings(
         )
         assert staying.rating == 1200
         assert leaving.rating == 1200
+
+
+def test_prestart_disconnect_creates_no_history_row(client) -> None:
+    asyncio.run(_prestart_disconnect_creates_no_history_row(client))
+
+
+async def _prestart_disconnect_creates_no_history_row(client) -> None:
+    FakeBridge.instances.clear()
+    with client.app.state.db_session_factory() as session:
+        session.add_all(
+            [
+                User(
+                    username="NoHistoryStaying",
+                    username_normalized="nohistorystaying",
+                    password_hash="not-a-real-hash",
+                ),
+                User(
+                    username="NoHistoryLeaving",
+                    username_normalized="nohistoryleaving",
+                    password_hash="not-a-real-hash",
+                ),
+            ]
+        )
+        session.commit()
+
+    room = active_room(
+        white_username="NoHistoryStaying",
+        black_username="NoHistoryLeaving",
+    )
+    manager = MatchManager(
+        "game",
+        54000,
+        FakeBridge,
+        session_factory=client.app.state.db_session_factory,
+    )
+    await manager.start_match(room)
+    # game_starts_at is left in the future, so this is a pre-start
+    # disconnect (match_cancelled path) - no rating change and no
+    # history row either.
+
+    await manager.cleanup_room(
+        room.room_id,
+        disconnected_user_id=room.black.user_id,
+    )
+
+    with client.app.state.db_session_factory() as session:
+        rows = session.scalars(select(MatchHistory)).all()
+        assert rows == []
 
 
 def test_disconnect_after_normal_game_over_does_not_double_update(

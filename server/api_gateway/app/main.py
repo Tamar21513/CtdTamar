@@ -13,6 +13,7 @@ from app.db.session import create_database_engine, create_session_factory
 from app.health import build_health_response
 from app.logging_config import configure_logging
 from app.matches.allocator import ShardLauncherClient
+from app.matches.history_router import router as match_history_router
 from app.matches.manager import MatchManager
 from app.matches.play_queue import PlayQueue
 from app.rooms.manager import RoomManager
@@ -125,6 +126,7 @@ app = FastAPI(
 )
 app.include_router(auth_router)
 app.include_router(websocket_router)
+app.include_router(match_history_router)
 
 
 @app.exception_handler(Exception)

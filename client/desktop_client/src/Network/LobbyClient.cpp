@@ -38,6 +38,10 @@ AuthResult LobbyClient::logout() {
     return apiClient_.logout();
 }
 
+MatchHistoryResult LobbyClient::getMatchHistory() {
+    return apiClient_.getMatchHistory();
+}
+
 bool LobbyClient::connectRealtime() {
     if (!cookieJar_.hasSession()) {
         return false;

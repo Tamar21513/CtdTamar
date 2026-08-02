@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.models import User
+from app.db.models import MatchHistory, User
 from app.matches.allocator import (
     GameServerShard,
     MatchUnavailableError,
@@ -542,6 +542,9 @@ class MatchManager:
             self._persist_rating_update,
             winner_username,
             loser_username,
+            winner_color,
+            "king_capture",
+            match.room.room_id,
         )
         if result is not None:
             new_winner_rating, new_loser_rating = result
@@ -564,6 +567,9 @@ class MatchManager:
         self,
         winner_username: str,
         loser_username: str,
+        winner_color: str,
+        reason: str,
+        room_id: UUID,
     ) -> tuple[int, int] | None:
         assert self._session_factory is not None
         try:
@@ -586,11 +592,43 @@ class MatchManager:
                         loser_username,
                     )
                     return None
+                winner_rating_before = winner.rating
+                loser_rating_before = loser.rating
                 new_winner_rating, new_loser_rating = update_ratings(
-                    winner.rating, loser.rating
+                    winner_rating_before, loser_rating_before
                 )
                 winner.rating = new_winner_rating
                 loser.rating = new_loser_rating
+                white, black = (
+                    (winner, loser)
+                    if winner_color == "white"
+                    else (loser, winner)
+                )
+                white_rating_before, black_rating_before = (
+                    (winner_rating_before, loser_rating_before)
+                    if winner_color == "white"
+                    else (loser_rating_before, winner_rating_before)
+                )
+                white_rating_after, black_rating_after = (
+                    (new_winner_rating, new_loser_rating)
+                    if winner_color == "white"
+                    else (new_loser_rating, new_winner_rating)
+                )
+                session.add(
+                    MatchHistory(
+                        room_id=room_id,
+                        white_user_id=white.id,
+                        black_user_id=black.id,
+                        white_username=white.username,
+                        black_username=black.username,
+                        winner_color=winner_color,
+                        white_rating_before=white_rating_before,
+                        white_rating_after=white_rating_after,
+                        black_rating_before=black_rating_before,
+                        black_rating_after=black_rating_after,
+                        reason=reason,
+                    )
+                )
                 session.commit()
                 logger.info(
                     "rating_update winner=%s winner_rating=%s "
@@ -677,6 +715,7 @@ class MatchManager:
         winner_username, loser_username = (
             winner_conn.username, loser_conn.username
         )
+        winner_color = "white" if winner_conn is white else "black"
         # Reuses the exact same ELO persistence used for a
         # king-capture win/loss (_apply_rating_update above) -
         # only the winner/loser attribution differs.
@@ -684,6 +723,9 @@ class MatchManager:
             self._persist_rating_update,
             winner_username,
             loser_username,
+            winner_color,
+            "disconnect",
+            match.room.room_id,
         )
         if result is not None:
             new_winner_rating, new_loser_rating = result

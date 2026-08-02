@@ -199,6 +199,42 @@ TEST_CASE("ApiClient clears cookie after unauthorized me") {
     CHECK_FALSE(jar.hasSession());
 }
 
+TEST_CASE("ApiClient parses match history entries") {
+    auto transport = std::make_shared<FakeHttpTransport>();
+    transport->responses.push_back({
+        200,
+        R"([{"opponent":"bob","color":"white","result":"win",)"
+        R"("rating_before":1200,"rating_after":1216,)"
+        R"("reason":"king_capture",)"
+        R"("ended_at":"2026-08-02T12:00:00Z"},)"
+        R"({"opponent":"carol","color":"black","result":"loss",)"
+        R"("rating_before":1216,"rating_after":1184,)"
+        R"("reason":"disconnect",)"
+        R"("ended_at":"2026-08-01T09:00:00Z"}])"});
+    SessionCookieJar jar;
+    ApiClient api({}, jar, transport);
+
+    const auto result = api.getMatchHistory();
+
+    CHECK(result.succeeded);
+    REQUIRE(result.entries.size() == 2);
+    CHECK(result.entries[0].opponent == "bob");
+    CHECK(result.entries[0].color == "white");
+    CHECK(result.entries[0].result == "win");
+    CHECK(result.entries[0].ratingBefore == 1200);
+    CHECK(result.entries[0].ratingAfter == 1216);
+    CHECK(result.entries[0].reason == "king_capture");
+    CHECK(result.entries[0].endedAt == "2026-08-02T12:00:00Z");
+    CHECK(result.entries[1].opponent == "carol");
+    CHECK(result.entries[1].result == "loss");
+    CHECK(result.entries[1].reason == "disconnect");
+
+    REQUIRE(transport->requests.size() == 1);
+    CHECK(
+        transport->requests.front().url.find("/matches/history") !=
+        std::string::npos);
+}
+
 TEST_CASE("LobbyProtocol serializes every outgoing operation") {
     CHECK(valueOf(LobbyProtocol::subscribeLobby(), "type") ==
           "subscribe_lobby");
