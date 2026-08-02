@@ -290,6 +290,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         connected_message(str(user.id), user.username, user.rating)
     )
 
+    match_manager: MatchManager = websocket.app.state.match_manager
+    await match_manager.try_reclaim(user.id, websocket)
+
     try:
         while True:
             raw_message = await websocket.receive_text()

@@ -577,6 +577,17 @@ def test_player_disconnect_notifies_opponent_and_spectator(
     spectator.receive_json()
     try:
         guest_context.__exit__(None, None, None)
+        # A mid-match disconnect now starts a grace period at the
+        # MatchManager level (see manager.cleanup_room), which pushes
+        # this reconnect countdown to the opponent before the
+        # room-level opponent_disconnected notification below - the
+        # room itself is still removed from the lobby immediately,
+        # unaffected by the match-level grace period.
+        assert host_socket.receive_json() == {
+            "type": "opponent_reconnecting",
+            "room_id": room["room_id"],
+            "seconds_remaining": 20,
+        }
         assert host_socket.receive_json() == {
             "type": "opponent_disconnected",
             "room_id": room["room_id"],

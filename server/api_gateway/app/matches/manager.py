@@ -3,7 +3,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -28,7 +28,10 @@ from app.matches.schemas import (
     match_cancelled_message,
     match_snapshot_message,
     match_state_message,
+    match_resumed_message,
     move_result_message,
+    opponent_reconnecting_message,
+    opponent_reconnected_message,
 )
 from app.rooms.models import ConnectedUser, GameRoom
 from app.websocket.schemas import rating_updated_message
@@ -64,6 +67,8 @@ class ActiveMatch:
     sequence_owners: dict[tuple[str, int], WebSocket] = field(
         default_factory=dict
     )
+    disconnected_user_id: UUID | None = None
+    disconnect_grace_task: asyncio.Task | None = None
 
 
 class MatchManager:
@@ -79,10 +84,12 @@ class MatchManager:
         additional_shards: list[tuple[str, int]] | None = None,
         shard_launcher: "ShardLauncherClient | None" = None,
         max_dynamic_shards: int = 50,
+        disconnect_grace_seconds: float = 20.0,
     ) -> None:
         self._bridge_factory = bridge_factory
         self._match_ended_handler = match_ended_handler
         self._session_factory = session_factory
+        self._disconnect_grace_seconds = disconnect_grace_seconds
         shards = [GameServerShard(host, port)] + [
             GameServerShard(shard_host, shard_port)
             for shard_host, shard_port in (additional_shards or [])
@@ -483,6 +490,8 @@ class MatchManager:
             await self._apply_rating_update(match)
         if match.countdown_task is not None:
             match.countdown_task.cancel()
+        if match.disconnect_grace_task is not None:
+            match.disconnect_grace_task.cancel()
         if self._match_ended_handler is not None:
             await self._match_ended_handler(room_id)
         await match.bridge.close()
@@ -653,42 +662,168 @@ class MatchManager:
         disconnected_user_id: UUID | None = None,
     ) -> None:
         async with self._lock:
+            match = self._matches.get(room_id)
+        if match is None:
+            return
+        before_start = time.time() < match.game_starts_at
+        already_over = match.snapshot.get("gameOver") is True
+        if (
+            not before_start
+            and not already_over
+            and disconnected_user_id is not None
+            and match.disconnected_user_id is None
+        ):
+            await self._begin_disconnect_grace(
+                room_id, match, disconnected_user_id
+            )
+            return
+
+        async with self._lock:
             match = self._matches.pop(room_id, None)
-        if match is not None:
-            before_start = time.time() < match.game_starts_at
-            if match.countdown_task is not None:
-                match.countdown_task.cancel()
-            if before_start:
-                logger.warning("match_cancel room_id=%s", room_id)
-                remaining = [
-                    match.room.white, match.room.black,
-                    *match.room.spectators.values(),
-                ]
-                await asyncio.gather(*(
-                    self._send(
-                        participant.websocket,
-                        match_cancelled_message(room_id),
-                    )
-                    for participant in remaining
-                    if participant is not None
-                ))
-            elif match.snapshot.get("gameOver") is True:
-                # The match already concluded by king capture (see
-                # _finish_match) - _finish_match's own task may not
-                # have run yet if this cleanup won the race, so
-                # apply the same king-capture-based rating update
-                # here instead of attributing the result to
-                # whoever's connection happened to close. Whichever
-                # of _finish_match/cleanup_room pops the match first
-                # is the only one that ever sees it, so this can
-                # never double-apply.
-                await self._apply_rating_update(match)
-            elif disconnected_user_id is not None:
-                await self._apply_disconnect_rating_update(
-                    match, disconnected_user_id
+        if match is None:
+            return
+        if match.disconnect_grace_task is not None:
+            match.disconnect_grace_task.cancel()
+        if match.countdown_task is not None:
+            match.countdown_task.cancel()
+        if before_start:
+            logger.warning("match_cancel room_id=%s", room_id)
+            remaining = [
+                match.room.white, match.room.black,
+                *match.room.spectators.values(),
+            ]
+            await asyncio.gather(*(
+                self._send(
+                    participant.websocket,
+                    match_cancelled_message(room_id),
                 )
-            await match.bridge.close()
-            await self._allocator.release(match.shard)
+                for participant in remaining
+                if participant is not None
+            ))
+        elif already_over:
+            # The match already concluded by king capture (see
+            # _finish_match) - _finish_match's own task may not
+            # have run yet if this cleanup won the race, so
+            # apply the same king-capture-based rating update
+            # here instead of attributing the result to
+            # whoever's connection happened to close. Whichever
+            # of _finish_match/cleanup_room pops the match first
+            # is the only one that ever sees it, so this can
+            # never double-apply.
+            await self._apply_rating_update(match)
+        elif disconnected_user_id is not None:
+            # Either this is the second player disconnecting while
+            # the first is still within their grace period (in which
+            # case the FIRST disconnected user - whoever that was -
+            # is the one who loses; we don't try to referee "both
+            # players vanished" any further than that), or a grace
+            # period already expired and _expire_disconnect_grace is
+            # the one finalizing (in which case
+            # match.disconnected_user_id already equals
+            # disconnected_user_id here).
+            await self._apply_disconnect_rating_update(
+                match, match.disconnected_user_id or disconnected_user_id
+            )
+        await match.bridge.close()
+        await self._allocator.release(match.shard)
+
+    async def _begin_disconnect_grace(
+        self,
+        room_id: UUID,
+        match: "ActiveMatch",
+        disconnected_user_id: UUID,
+    ) -> None:
+        match.disconnected_user_id = disconnected_user_id
+        white = match.room.white
+        black = match.room.black
+        opponent = (
+            black
+            if white is not None and white.user_id == disconnected_user_id
+            else white
+        )
+        if opponent is not None:
+            await self._send(
+                opponent.websocket,
+                opponent_reconnecting_message(
+                    room_id, int(self._disconnect_grace_seconds)
+                ),
+            )
+        match.disconnect_grace_task = asyncio.create_task(
+            self._expire_disconnect_grace(room_id, disconnected_user_id)
+        )
+
+    async def _expire_disconnect_grace(
+        self,
+        room_id: UUID,
+        disconnected_user_id: UUID,
+    ) -> None:
+        await asyncio.sleep(self._disconnect_grace_seconds)
+        async with self._lock:
+            match = self._matches.get(room_id)
+            if (
+                match is None
+                or match.disconnected_user_id != disconnected_user_id
+            ):
+                return
+            del self._matches[room_id]
+        await self._apply_disconnect_rating_update(
+            match, disconnected_user_id
+        )
+        await match.bridge.close()
+        await self._allocator.release(match.shard)
+
+    async def try_reclaim(
+        self,
+        user_id: UUID,
+        websocket: WebSocket,
+    ) -> bool:
+        async with self._lock:
+            match = None
+            for candidate in self._matches.values():
+                if candidate.disconnected_user_id == user_id:
+                    match = candidate
+                    break
+            if match is None:
+                return False
+            match.disconnected_user_id = None
+            if match.disconnect_grace_task is not None:
+                match.disconnect_grace_task.cancel()
+                match.disconnect_grace_task = None
+            white = match.room.white
+            black = match.room.black
+            if white is not None and white.user_id == user_id:
+                white = replace(white, websocket=websocket)
+                match.room.white = white
+                color = "white"
+                opponent_conn = black
+            elif black is not None and black.user_id == user_id:
+                black = replace(black, websocket=websocket)
+                match.room.black = black
+                color = "black"
+                opponent_conn = white
+            else:
+                return False
+            room_id = match.room.room_id
+            revision = match.revision
+            snapshot = match.snapshot
+            white_rating = white.rating if white is not None else 1200
+            black_rating = black.rating if black is not None else 1200
+            opponent_username = (
+                opponent_conn.username if opponent_conn is not None else ""
+            )
+        await self._send(
+            websocket,
+            match_resumed_message(
+                room_id, color, opponent_username, revision, snapshot,
+                white_rating, black_rating,
+            ),
+        )
+        if opponent_conn is not None:
+            await self._send(
+                opponent_conn.websocket,
+                opponent_reconnected_message(room_id),
+            )
+        return True
 
     async def _apply_disconnect_rating_update(
         self,

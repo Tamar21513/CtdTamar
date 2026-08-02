@@ -620,6 +620,7 @@ async def _mid_match_disconnect_updates_ratings(client) -> None:
         54000,
         FakeBridge,
         session_factory=client.app.state.db_session_factory,
+        disconnect_grace_seconds=0.05,
     )
     await manager.start_match(room)
     # Move the match past its countdown so cleanup treats this as
@@ -630,6 +631,19 @@ async def _mid_match_disconnect_updates_ratings(client) -> None:
         room.room_id,
         disconnected_user_id=room.black.user_id,
     )
+    # The disconnect only starts a grace period now - ratings must
+    # not change until it actually expires.
+    with client.app.state.db_session_factory() as session:
+        staying = session.scalar(
+            select(User).where(User.username == "StayingPlayer")
+        )
+        leaving = session.scalar(
+            select(User).where(User.username == "LeavingPlayer")
+        )
+        assert staying.rating == 1200
+        assert leaving.rating == 1200
+
+    await asyncio.sleep(0.1)
 
     with client.app.state.db_session_factory() as session:
         staying = session.scalar(
@@ -674,6 +688,7 @@ async def _mid_match_disconnect_records_match_history(client) -> None:
         54000,
         FakeBridge,
         session_factory=client.app.state.db_session_factory,
+        disconnect_grace_seconds=0.05,
     )
     await manager.start_match(room)
     manager._matches[room.room_id].game_starts_at = 0
@@ -682,6 +697,11 @@ async def _mid_match_disconnect_records_match_history(client) -> None:
         room.room_id,
         disconnected_user_id=room.black.user_id,
     )
+    # No history row until the grace period actually expires.
+    with client.app.state.db_session_factory() as session:
+        assert session.scalars(select(MatchHistory)).all() == []
+
+    await asyncio.sleep(0.1)
 
     with client.app.state.db_session_factory() as session:
         rows = session.scalars(select(MatchHistory)).all()
@@ -894,6 +914,358 @@ async def _disconnect_after_normal_game_over_does_not_double_update(
         )
         assert winner.rating == 1216
         assert loser.rating == 1184
+
+
+def test_mid_match_disconnect_starts_grace_period_without_immediate_rating_change(
+    client,
+) -> None:
+    asyncio.run(_disconnect_starts_grace_period(client))
+
+
+async def _disconnect_starts_grace_period(client) -> None:
+    FakeBridge.instances.clear()
+    with client.app.state.db_session_factory() as session:
+        session.add_all(
+            [
+                User(
+                    username="GraceStaying",
+                    username_normalized="gracestaying",
+                    password_hash="not-a-real-hash",
+                ),
+                User(
+                    username="GraceLeaving",
+                    username_normalized="graceleaving",
+                    password_hash="not-a-real-hash",
+                ),
+            ]
+        )
+        session.commit()
+
+    room = active_room(
+        white_username="GraceStaying",
+        black_username="GraceLeaving",
+    )
+    manager = MatchManager(
+        "game",
+        54000,
+        FakeBridge,
+        session_factory=client.app.state.db_session_factory,
+        disconnect_grace_seconds=12,
+    )
+    await manager.start_match(room)
+    manager._matches[room.room_id].game_starts_at = 0
+
+    await manager.cleanup_room(
+        room.room_id,
+        disconnected_user_id=room.black.user_id,
+    )
+
+    # The grace period has only just started - the match is still
+    # tracked and nothing has been finalized yet.
+    assert room.room_id in manager._matches
+    with client.app.state.db_session_factory() as session:
+        staying = session.scalar(
+            select(User).where(User.username == "GraceStaying")
+        )
+        leaving = session.scalar(
+            select(User).where(User.username == "GraceLeaving")
+        )
+        assert staying.rating == 1200
+        assert leaving.rating == 1200
+
+    assert room.white.websocket.messages[-1] == {
+        "type": "opponent_reconnecting",
+        "room_id": str(room.room_id),
+        "seconds_remaining": 12,
+    }
+
+    manager._matches[room.room_id].disconnect_grace_task.cancel()
+
+
+@async_test
+async def test_reclaim_resumes_match_and_resets_disconnect_state() -> None:
+    FakeBridge.instances.clear()
+    room = active_room(
+        white_username="ReclaimStaying",
+        black_username="ReclaimLeaving",
+    )
+    manager = MatchManager(
+        "game", 54000, FakeBridge, disconnect_grace_seconds=12
+    )
+    await manager.start_match(room)
+    manager._matches[room.room_id].game_starts_at = 0
+    leaving_user_id = room.black.user_id
+
+    await manager.cleanup_room(
+        room.room_id,
+        disconnected_user_id=leaving_user_id,
+    )
+    assert (
+        manager._matches[room.room_id].disconnected_user_id
+        == leaving_user_id
+    )
+
+    new_socket = FakeSocket()
+    reclaimed = await manager.try_reclaim(leaving_user_id, new_socket)
+    assert reclaimed is True
+
+    match = manager._matches[room.room_id]
+    assert match.disconnected_user_id is None
+    assert match.disconnect_grace_task is None
+    assert match.room.black.websocket is new_socket
+
+    resumed_message = new_socket.messages[-1]
+    assert resumed_message["type"] == "match_resumed"
+    assert resumed_message["room_id"] == str(room.room_id)
+    assert resumed_message["color"] == "black"
+    assert resumed_message["opponent"] == "ReclaimStaying"
+    assert resumed_message["revision"] == match.revision
+    assert resumed_message["state"] == match.snapshot
+    assert resumed_message["white_rating"] == 1200
+    assert resumed_message["black_rating"] == 1200
+
+    assert room.white.websocket.messages[-1] == {
+        "type": "opponent_reconnected",
+        "room_id": str(room.room_id),
+    }
+
+    # Reclaiming must truly reset disconnected_user_id - a fresh
+    # disconnect of the same user has to start a brand-new grace
+    # period, not silently no-op because it looks "already handled".
+    await manager.cleanup_room(
+        room.room_id,
+        disconnected_user_id=leaving_user_id,
+    )
+    match = manager._matches[room.room_id]
+    assert match.disconnected_user_id == leaving_user_id
+    assert match.disconnect_grace_task is not None
+    match.disconnect_grace_task.cancel()
+
+
+def test_disconnect_grace_period_expiry_matches_immediate_disconnect_outcome(
+    client,
+) -> None:
+    asyncio.run(_grace_period_expiry_outcome(client))
+
+
+async def _grace_period_expiry_outcome(client) -> None:
+    FakeBridge.instances.clear()
+    with client.app.state.db_session_factory() as session:
+        session.add_all(
+            [
+                User(
+                    username="ExpiryStaying",
+                    username_normalized="expirystaying",
+                    password_hash="not-a-real-hash",
+                ),
+                User(
+                    username="ExpiryLeaving",
+                    username_normalized="expiryleaving",
+                    password_hash="not-a-real-hash",
+                ),
+            ]
+        )
+        session.commit()
+
+    room = active_room(
+        white_username="ExpiryStaying",
+        black_username="ExpiryLeaving",
+    )
+    manager = MatchManager(
+        "game",
+        54000,
+        FakeBridge,
+        session_factory=client.app.state.db_session_factory,
+        disconnect_grace_seconds=0.05,
+    )
+    await manager.start_match(room)
+    manager._matches[room.room_id].game_starts_at = 0
+
+    await manager.cleanup_room(
+        room.room_id,
+        disconnected_user_id=room.black.user_id,
+    )
+    await asyncio.sleep(0.15)
+
+    # Match is fully finalized once the grace period expires.
+    assert room.room_id not in manager._matches
+    assert FakeBridge.instances[-1].closed
+    with client.app.state.db_session_factory() as session:
+        staying = session.scalar(
+            select(User).where(User.username == "ExpiryStaying")
+        )
+        leaving = session.scalar(
+            select(User).where(User.username == "ExpiryLeaving")
+        )
+        assert staying.rating == 1216
+        assert leaving.rating == 1184
+        rows = session.scalars(select(MatchHistory)).all()
+        assert len(rows) == 1
+        assert rows[0].reason == "disconnect"
+        assert rows[0].winner_color == "white"
+
+
+def test_second_disconnect_during_grace_finalizes_with_first_as_loser(
+    client,
+) -> None:
+    asyncio.run(_second_disconnect_during_grace(client))
+
+
+async def _second_disconnect_during_grace(client) -> None:
+    FakeBridge.instances.clear()
+    with client.app.state.db_session_factory() as session:
+        session.add_all(
+            [
+                User(
+                    username="FirstToLeave",
+                    username_normalized="firsttoleave",
+                    password_hash="not-a-real-hash",
+                ),
+                User(
+                    username="SecondToLeave",
+                    username_normalized="secondtoleave",
+                    password_hash="not-a-real-hash",
+                ),
+            ]
+        )
+        session.commit()
+
+    room = active_room(
+        white_username="FirstToLeave",
+        black_username="SecondToLeave",
+    )
+    manager = MatchManager(
+        "game",
+        54000,
+        FakeBridge,
+        session_factory=client.app.state.db_session_factory,
+        # Long enough that the second disconnect below always lands
+        # while the first player's grace period is still active.
+        disconnect_grace_seconds=30,
+    )
+    await manager.start_match(room)
+    manager._matches[room.room_id].game_starts_at = 0
+
+    # White disconnects first and enters its grace period.
+    await manager.cleanup_room(
+        room.room_id,
+        disconnected_user_id=room.white.user_id,
+    )
+    assert (
+        manager._matches[room.room_id].disconnected_user_id
+        == room.white.user_id
+    )
+
+    # Black then also disconnects while white is still in grace -
+    # this must finalize immediately, with white (the FIRST
+    # disconnected user) as the loser, not black.
+    await manager.cleanup_room(
+        room.room_id,
+        disconnected_user_id=room.black.user_id,
+    )
+
+    assert room.room_id not in manager._matches
+    with client.app.state.db_session_factory() as session:
+        first = session.scalar(
+            select(User).where(User.username == "FirstToLeave")
+        )
+        second = session.scalar(
+            select(User).where(User.username == "SecondToLeave")
+        )
+        assert first.rating == 1184
+        assert second.rating == 1216
+        rows = session.scalars(select(MatchHistory)).all()
+        assert len(rows) == 1
+        assert rows[0].winner_color == "black"
+
+
+def test_king_capture_during_grace_period_cancels_grace_and_wins_by_capture(
+    client,
+) -> None:
+    asyncio.run(_king_capture_during_grace_period(client))
+
+
+async def _king_capture_during_grace_period(client) -> None:
+    FakeBridge.instances.clear()
+    with client.app.state.db_session_factory() as session:
+        session.add_all(
+            [
+                User(
+                    username="CaptureStaying",
+                    username_normalized="capturestaying",
+                    password_hash="not-a-real-hash",
+                ),
+                User(
+                    username="CaptureLeaving",
+                    username_normalized="captureleaving",
+                    password_hash="not-a-real-hash",
+                ),
+            ]
+        )
+        session.commit()
+
+    room = active_room(
+        white_username="CaptureStaying",
+        black_username="CaptureLeaving",
+    )
+    manager = MatchManager(
+        "game",
+        54000,
+        FakeBridge,
+        session_factory=client.app.state.db_session_factory,
+        disconnect_grace_seconds=30,
+    )
+    await manager.start_match(room)
+    manager._matches[room.room_id].game_starts_at = 0
+    bridge = FakeBridge.instances[-1]
+
+    # Black disconnects and enters a long grace period - the bridge
+    # to chess_server is independent of the Gateway websocket, so
+    # the still-connected white player can keep playing and win by
+    # king capture while black's grace period is running.
+    await manager.cleanup_room(
+        room.room_id,
+        disconnected_user_id=room.black.user_id,
+    )
+    match = manager._matches[room.room_id]
+    grace_task = match.disconnect_grace_task
+    assert grace_task is not None
+    assert not grace_task.done()
+
+    await bridge.handler(
+        "white",
+        {
+            "type": "game_over",
+            "hasSnapshot": True,
+            "snapshot": {
+                **INITIAL_STATE,
+                "gameOver": True,
+                "pieces": [{"id": 1, "token": "wK"}],
+            },
+        },
+    )
+    await asyncio.sleep(0.2)
+
+    # No exception/hang, and the grace task was cancelled rather
+    # than left to expire on its own later.
+    assert grace_task.cancelled()
+    assert room.room_id not in manager._matches
+    with client.app.state.db_session_factory() as session:
+        staying = session.scalar(
+            select(User).where(User.username == "CaptureStaying")
+        )
+        leaving = session.scalar(
+            select(User).where(User.username == "CaptureLeaving")
+        )
+        # King-capture logic determined the outcome, not the
+        # pending disconnect - white (the king-capture winner) gains
+        # rating even though black was the one mid-grace-period.
+        assert staying.rating == 1216
+        assert leaving.rating == 1184
+        rows = session.scalars(select(MatchHistory)).all()
+        assert len(rows) == 1
+        assert rows[0].reason == "king_capture"
+        assert rows[0].winner_color == "white"
 
 
 @async_test

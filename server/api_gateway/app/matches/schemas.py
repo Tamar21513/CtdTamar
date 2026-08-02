@@ -86,6 +86,41 @@ def match_state_message(
     }
 
 
+def opponent_reconnecting_message(
+    room_id: UUID, seconds_remaining: int
+) -> dict[str, Any]:
+    return {
+        "type": "opponent_reconnecting",
+        "room_id": str(room_id),
+        "seconds_remaining": seconds_remaining,
+    }
+
+
+def opponent_reconnected_message(room_id: UUID) -> dict[str, str]:
+    return {"type": "opponent_reconnected", "room_id": str(room_id)}
+
+
+def match_resumed_message(
+    room_id: UUID,
+    color: str,
+    opponent: str,
+    revision: int,
+    state: dict[str, Any],
+    white_rating: int,
+    black_rating: int,
+) -> dict[str, Any]:
+    return {
+        "type": "match_resumed",
+        "room_id": str(room_id),
+        "color": color,
+        "opponent": opponent,
+        "revision": revision,
+        "state": state,
+        "white_rating": white_rating,
+        "black_rating": black_rating,
+    }
+
+
 def move_result_message(
     room_id: UUID,
     sequence: int,
