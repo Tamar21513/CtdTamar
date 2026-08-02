@@ -16,6 +16,7 @@ from app.db.models import User
 from app.matches.allocator import (
     GameServerShard,
     MatchUnavailableError,
+    ShardLauncherClient,
     ShardPoolAllocator,
 )
 from app.matches.bridge import GameServerBridge
@@ -76,6 +77,8 @@ class MatchManager:
         ) = None,
         session_factory: sessionmaker[Session] | None = None,
         additional_shards: list[tuple[str, int]] | None = None,
+        shard_launcher: "ShardLauncherClient | None" = None,
+        max_dynamic_shards: int = 50,
     ) -> None:
         self._bridge_factory = bridge_factory
         self._match_ended_handler = match_ended_handler
@@ -84,7 +87,11 @@ class MatchManager:
             GameServerShard(shard_host, shard_port)
             for shard_host, shard_port in (additional_shards or [])
         ]
-        self._allocator = ShardPoolAllocator(shards)
+        self._allocator = ShardPoolAllocator(
+            shards,
+            launcher=shard_launcher,
+            max_dynamic_shards=max_dynamic_shards,
+        )
         self._matches: dict[UUID, ActiveMatch] = {}
         self._lock = asyncio.Lock()
 

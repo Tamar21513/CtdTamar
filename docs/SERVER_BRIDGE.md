@@ -25,7 +25,8 @@ running several independent `ctd_server.exe` processes, one per port,
 and letting the Gateway's shard-pool allocator (`app/matches/allocator.py`)
 hand out a free one per match. A room activation only receives
 `match_unavailable` once every configured shard is already hosting a
-match.
+match. For unbounded/dynamic shard spawning instead of a fixed
+pre-started list, see `docs/SHARD_LAUNCHER.md`.
 
 ## Windows and Docker Desktop startup
 

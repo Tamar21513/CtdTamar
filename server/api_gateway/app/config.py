@@ -42,6 +42,10 @@ class Settings(BaseSettings):
             shards.append((host, int(port_text)))
         return shards
 
+    CTD_SHARD_LAUNCHER_HOST: str = ""
+    CTD_SHARD_LAUNCHER_PORT: int = Field(default=5100, ge=1, le=65535)
+    CTD_MAX_DYNAMIC_SHARDS: int = Field(default=50, ge=1)
+
     SESSION_COOKIE_NAME: str = "ctd_session"
     SESSION_TTL_SECONDS: int = Field(default=3600, ge=60)
     SESSION_COOKIE_SECURE: bool = False
