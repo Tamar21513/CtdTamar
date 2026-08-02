@@ -14,8 +14,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import User
 from app.matches.allocator import (
+    GameServerShard,
     MatchUnavailableError,
-    SingleMatchAllocator,
+    ShardPoolAllocator,
 )
 from app.matches.bridge import GameServerBridge
 from app.matches.rating import update_ratings
@@ -57,6 +58,7 @@ class ActiveMatch:
     snapshot: dict[str, Any]
     game_starts_at: float
     game_starts_at_iso: str
+    shard: GameServerShard
     countdown_task: asyncio.Task | None = None
     sequence_owners: dict[tuple[str, int], WebSocket] = field(
         default_factory=dict
@@ -73,13 +75,16 @@ class MatchManager:
             Callable[[UUID], Awaitable[None]] | None
         ) = None,
         session_factory: sessionmaker[Session] | None = None,
+        additional_shards: list[tuple[str, int]] | None = None,
     ) -> None:
-        self._host = host
-        self._port = port
         self._bridge_factory = bridge_factory
         self._match_ended_handler = match_ended_handler
         self._session_factory = session_factory
-        self._allocator = SingleMatchAllocator()
+        shards = [GameServerShard(host, port)] + [
+            GameServerShard(shard_host, shard_port)
+            for shard_host, shard_port in (additional_shards or [])
+        ]
+        self._allocator = ShardPoolAllocator(shards)
         self._matches: dict[UUID, ActiveMatch] = {}
         self._lock = asyncio.Lock()
 
@@ -100,7 +105,7 @@ class MatchManager:
                 "room_not_ready", "The room needs two players."
             )
         try:
-            await self._allocator.acquire()
+            shard = await self._allocator.acquire()
         except MatchUnavailableError as error:
             logger.warning(
                 "match_reject room_id=%s code=match_unavailable",
@@ -111,7 +116,7 @@ class MatchManager:
                 "The game server is already hosting a match.",
             ) from error
 
-        bridge = self._bridge_factory(self._host, self._port)
+        bridge = self._bridge_factory(shard.host, shard.port)
 
         async def handle(color: str, message: dict[str, Any]) -> None:
             await self._handle_bridge_event(room.room_id, color, message)
@@ -128,7 +133,7 @@ class MatchManager:
             ).isoformat().replace("+00:00", "Z")
             match = ActiveMatch(
                 room, bridge, 1, snapshot, game_starts_at,
-                game_starts_at_iso,
+                game_starts_at_iso, shard,
             )
             async with self._lock:
                 self._matches[room.room_id] = match
@@ -173,7 +178,7 @@ class MatchManager:
                 room.room_id,
             )
             await bridge.close()
-            await self._allocator.release()
+            await self._allocator.release(shard)
             raise MatchOperationError(
                 "game_server_unavailable",
                 "The authoritative game server is unavailable.",
@@ -474,7 +479,7 @@ class MatchManager:
         if self._match_ended_handler is not None:
             await self._match_ended_handler(room_id)
         await match.bridge.close()
-        await self._allocator.release()
+        await self._allocator.release(match.shard)
 
     @staticmethod
     def _winner_color(snapshot: dict[str, Any]) -> str | None:
@@ -638,7 +643,7 @@ class MatchManager:
                     match, disconnected_user_id
                 )
             await match.bridge.close()
-            await self._allocator.release()
+            await self._allocator.release(match.shard)
 
     async def _apply_disconnect_rating_update(
         self,

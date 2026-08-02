@@ -96,6 +96,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.CTD_GAME_SERVER_PORT,
         match_ended_handler=match_ended,
         session_factory=app.state.db_session_factory,
+        additional_shards=settings.game_server_shards,
     )
     try:
         yield

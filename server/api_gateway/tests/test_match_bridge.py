@@ -50,6 +50,8 @@ class FakeBridge:
     instances: list["FakeBridge"] = []
 
     def __init__(self, host: str, port: int) -> None:
+        self.host = host
+        self.port = port
         self.handler = None
         self.moves: list[tuple] = []
         self.jumps: list[tuple] = []
@@ -300,6 +302,42 @@ async def test_cleanup_releases_single_match_allocator() -> None:
     await manager.cleanup_room(first.room_id)
     assert FakeBridge.instances[0].closed
     await manager.start_match(second)
+
+
+@async_test
+async def test_shard_pool_allows_concurrent_matches_on_different_shards() -> None:
+    FakeBridge.instances.clear()
+    first = active_room("First")
+    second = active_room("Second")
+    third = active_room("Third")
+    manager = MatchManager(
+        "shard-a",
+        54000,
+        FakeBridge,
+        additional_shards=[("shard-b", 54001)],
+    )
+
+    await asyncio.gather(
+        manager.start_match(first), manager.start_match(second)
+    )
+
+    used_shards = {
+        (instance.host, instance.port)
+        for instance in FakeBridge.instances
+    }
+    assert used_shards == {("shard-a", 54000), ("shard-b", 54001)}
+
+    with pytest.raises(MatchOperationError) as error:
+        await manager.start_match(third)
+    assert error.value.code == "match_unavailable"
+
+    await manager.cleanup_room(first.room_id)
+    await manager.start_match(third)
+    used_shards = {
+        (instance.host, instance.port)
+        for instance in FakeBridge.instances
+    }
+    assert used_shards == {("shard-a", 54000), ("shard-b", 54001)}
 
 
 @async_test

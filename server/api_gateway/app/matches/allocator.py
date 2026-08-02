@@ -1,25 +1,37 @@
 import asyncio
+from dataclasses import dataclass
 
 
 class MatchUnavailableError(RuntimeError):
     pass
 
 
-class SingleMatchAllocator:
-    """Reserves the one authoritative server supported in Stage 3G."""
+@dataclass(frozen=True)
+class GameServerShard:
+    host: str
+    port: int
 
-    def __init__(self) -> None:
+
+class ShardPoolAllocator:
+    """Reserves one of a pool of authoritative game server shards."""
+
+    def __init__(self, shards: list[GameServerShard]) -> None:
+        if not shards:
+            raise ValueError(
+                "At least one game server shard is required."
+            )
         self._lock = asyncio.Lock()
-        self._allocated = False
+        self._available: list[GameServerShard] = list(shards)
 
-    async def acquire(self) -> None:
+    async def acquire(self) -> GameServerShard:
         async with self._lock:
-            if self._allocated:
+            if not self._available:
                 raise MatchUnavailableError(
-                    "The game server is already hosting a match."
+                    "All game server shards are already hosting "
+                    "a match."
                 )
-            self._allocated = True
+            return self._available.pop()
 
-    async def release(self) -> None:
+    async def release(self, shard: GameServerShard) -> None:
         async with self._lock:
-            self._allocated = False
+            self._available.append(shard)
